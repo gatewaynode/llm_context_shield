@@ -1,0 +1,34 @@
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(
+    name = "llm_context_shield",
+    about = "Scan text for LLM context injection threats"
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand)]
+pub enum Command {
+    /// Scan input text for threats
+    Scan {
+        /// Input file (reads stdin if omitted)
+        file: Option<PathBuf>,
+
+        /// Output format: json, text, quiet
+        #[arg(short, long, default_value = "text")]
+        format: String,
+
+        /// Minimum severity to report: low, medium, high, critical
+        #[arg(short, long, default_value = "low")]
+        severity: String,
+
+        /// Disable specific scanners (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        disable: Vec<String>,
+    },
+}
