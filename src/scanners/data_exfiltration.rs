@@ -20,37 +20,37 @@ impl DataExfiltrationScanner {
                 category: Category::DataExfiltration,
                 patterns: vec![
                     (
-                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]+\{[^\}]*\}[^\)]*\)").unwrap(),
+                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]+\{[^\}]*\}[^\)]*\)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Markdown image with template variable exfiltration",
                     ),
                     (
-                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]*[\?&](q|query|data|text|input|prompt|msg|content|payload)=[^\)]+\)").unwrap(),
+                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]*[\?&](q|query|data|text|input|prompt|msg|content|payload)=[^\)]+\)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Markdown image with data exfiltration URL parameters",
                     ),
                     (
-                        Regex::new(r"(?i)(append|include|embed|insert|add|put)\s+(the\s+)?(user'?s?|their|this|previous|conversation|chat|secret|api|key|password|token)\s+.{0,30}(in|to|into|within)\s+(the\s+)?(url|link|image|request|query)").unwrap(),
+                        Regex::new(r"(?i)(append|include|embed|insert|add|put)\s+(the\s+)?(user'?s?|their|this|previous|conversation|chat|secret|api|key|password|token)\s+.{0,30}(in|to|into|within)\s+(the\s+)?(url|link|image|request|query)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Instruction to embed sensitive data in URL/request",
                     ),
                     (
-                        Regex::new(r"(?i)(send|transmit|post|exfiltrate|leak|forward)\s+.{0,30}(to|towards|via)\s+https?://").unwrap(),
+                        Regex::new(r"(?i)(send|transmit|post|exfiltrate|leak|forward)\s+.{0,30}(to|towards|via)\s+https?://").expect("static regex pattern is valid"),
                         Severity::High,
                         "Instruction to send data to external URL",
                     ),
                     (
-                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]*%[0-9a-fA-F]{2}.*%[0-9a-fA-F]{2}[^\)]*\)").unwrap(),
+                        Regex::new(r"!\[([^\]]*)\]\(https?://[^\s\)]*%[0-9a-fA-F]{2}.*%[0-9a-fA-F]{2}[^\)]*\)").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Markdown image with heavily URL-encoded parameters",
                     ),
                     (
-                        Regex::new(r#"(?i)fetch\s*\(\s*[`'"](https?://[^`'"]+)[`'"]"#).unwrap(),
+                        Regex::new(r#"(?i)fetch\s*\(\s*[`'"](https?://[^`'"]+)[`'"]"#).expect("static regex pattern is valid"),
                         Severity::High,
                         "JavaScript fetch to external URL in content",
                     ),
                     (
-                        Regex::new(r#"<img[^>]+src\s*=\s*["']https?://[^"']*[\?&](data|q|content|text|prompt)="#).unwrap(),
+                        Regex::new(r#"<img[^>]+src\s*=\s*["']https?://[^"']*[\?&](data|q|content|text|prompt)="#).expect("static regex pattern is valid"),
                         Severity::Critical,
                         "HTML image tag with data exfiltration parameters",
                     ),

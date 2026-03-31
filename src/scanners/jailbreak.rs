@@ -20,47 +20,47 @@ impl JailbreakScanner {
                 category: Category::Jailbreak,
                 patterns: vec![
                     (
-                        Regex::new(r"(?i)\bDAN\s+(mode|prompt|jailbreak)").unwrap(),
+                        Regex::new(r"(?i)\bDAN\s+(mode|prompt|jailbreak)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "DAN (Do Anything Now) jailbreak reference",
                     ),
                     (
-                        Regex::new(r"(?i)\bdo\s+anything\s+now\b").unwrap(),
+                        Regex::new(r"(?i)\bdo\s+anything\s+now\b").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Do Anything Now jailbreak phrase",
                     ),
                     (
-                        Regex::new(r"(?i)(pretend|imagine|act\s+as\s+if|suppose|assume)\s+(you\s+)?(are|have|were|had)\s+(no|zero|without)\s+(restrictions?|limitations?|filters?|safety|guidelines?|rules?|boundaries)").unwrap(),
+                        Regex::new(r"(?i)(pretend|imagine|act\s+as\s+if|suppose|assume)\s+(you\s+)?(are|have|were|had)\s+(no|zero|without)\s+(restrictions?|limitations?|filters?|safety|guidelines?|rules?|boundaries)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Restriction removal via roleplay",
                     ),
                     (
-                        Regex::new(r"(?i)(pretend|imagine|act\s+as\s+if)\s+(you\s+)?are\s+(an?\s+)?(unrestricted|uncensored|unfiltered|unhinged|evil|malicious)").unwrap(),
+                        Regex::new(r"(?i)(pretend|imagine|act\s+as\s+if)\s+(you\s+)?are\s+(an?\s+)?(unrestricted|uncensored|unfiltered|unhinged|evil|malicious)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Roleplay as unrestricted entity",
                     ),
                     (
-                        Regex::new(r"(?i)jailbr[e3]ak\s*(mode|prompt|enabled|activated)").unwrap(),
+                        Regex::new(r"(?i)jailbr[e3]ak\s*(mode|prompt|enabled|activated)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Explicit jailbreak mode reference",
                     ),
                     (
-                        Regex::new(r"(?i)(enable|activate|enter|switch\s+to)\s+(unrestricted|uncensored|unfiltered|god|sudo|root)\s+mode").unwrap(),
+                        Regex::new(r"(?i)(enable|activate|enter|switch\s+to)\s+(unrestricted|uncensored|unfiltered|god|sudo|root)\s+mode").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Unrestricted mode activation attempt",
                     ),
                     (
-                        Regex::new(r"(?i)respond\s+(without|with\s+no)\s+(any\s+)?(ethical|moral|safety|content)\s+(guidelines?|restrictions?|filters?|considerations?)").unwrap(),
+                        Regex::new(r"(?i)respond\s+(without|with\s+no)\s+(any\s+)?(ethical|moral|safety|content)\s+(guidelines?|restrictions?|filters?|considerations?)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Request to respond without safety guidelines",
                     ),
                     (
-                        Regex::new(r"(?i)(bypass|circumvent|evade|disable|remove)\s+(your\s+)?(safety|content|ethical)\s+(filters?|guidelines?|restrictions?|measures?|checks?)").unwrap(),
+                        Regex::new(r"(?i)(bypass|circumvent|evade|disable|remove)\s+(your\s+)?(safety|content|ethical)\s+(filters?|guidelines?|restrictions?|measures?|checks?)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Direct safety bypass attempt",
                     ),
                     (
-                        Regex::new(r"(?i)opposite\s+day|opposite\s+mode").unwrap(),
+                        Regex::new(r"(?i)opposite\s+day|opposite\s+mode").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Opposite mode trick to invert safety",
                     ),

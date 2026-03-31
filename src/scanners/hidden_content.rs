@@ -30,9 +30,9 @@ impl HiddenContentScanner {
                 ('\u{2064}', "Invisible plus"),
             ],
             // Matches suspicious base64-like strings (40+ chars, padding optional)
-            base64_pattern: Regex::new(r"[A-Za-z0-9+/]{40,}={0,2}").unwrap(),
+            base64_pattern: Regex::new(r"[A-Za-z0-9+/]{40,}={0,2}").expect("static regex pattern is valid"),
             // Common Cyrillic/Greek homoglyphs of Latin letters mixed with ASCII
-            homoglyph_pattern: Regex::new(r"[\x00-\x7F]*[\u{0400}-\u{04FF}\u{0370}-\u{03FF}][\x00-\x7F]*[\u{0400}-\u{04FF}\u{0370}-\u{03FF}]").unwrap(),
+            homoglyph_pattern: Regex::new(r"[\x00-\x7F]*[\u{0400}-\u{04FF}\u{0370}-\u{03FF}][\x00-\x7F]*[\u{0400}-\u{04FF}\u{0370}-\u{03FF}]").expect("static regex pattern is valid"),
         }
     }
 }
@@ -89,7 +89,8 @@ fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len])
+        let end = s.floor_char_boundary(max_len);
+        format!("{}...", &s[..end])
     }
 }
 
@@ -142,5 +143,17 @@ mod tests {
         // Short base64-like strings should not trigger
         let findings = scan("The product ID is ABC123def456.");
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn truncate_multibyte_no_panic() {
+        // 59 ASCII bytes followed by a Cyrillic char — homoglyph match truncation
+        // previously panicked because byte offset 60 falls inside the 2-byte Cyrillic char.
+        let mut input = "A".repeat(59);
+        input.push('\u{0430}'); // Cyrillic 'а' (2 bytes in UTF-8)
+        input.push('\u{0435}'); // Cyrillic 'е' — need two non-Latin chars for homoglyph pattern
+        let findings = scan(&input);
+        // Must not panic; homoglyph finding should be present
+        assert!(findings.iter().any(|f| f.description.contains("homoglyph")));
     }
 }

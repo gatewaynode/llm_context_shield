@@ -8,6 +8,10 @@ use clap::{Parser, Subcommand};
     about = "Scan text for LLM context injection threats"
 )]
 pub struct Cli {
+    /// Enable logging to ~/.local/state/llm_context_shield/llm_context_shield.log
+    #[arg(long)]
+    pub log: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

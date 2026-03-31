@@ -18,7 +18,8 @@ pub fn output(report: &ScanReport, format: &str, min_severity: Severity) -> io::
             });
             let stdout = io::stdout();
             let mut out = stdout.lock();
-            serde_json::to_writer_pretty(&mut out, &filtered_report)?;
+            serde_json::to_writer_pretty(&mut out, &filtered_report)
+                .map_err(|e| io::Error::other(format!("JSON serialisation failed: {e}")))?;
             writeln!(out)?;
         }
         "quiet" => {}

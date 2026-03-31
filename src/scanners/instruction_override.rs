@@ -20,42 +20,42 @@ impl InstructionOverrideScanner {
                 category: Category::InstructionOverride,
                 patterns: vec![
                     (
-                        Regex::new(r"(?im)^\[?SYSTEM\]?\s*:\s*.+").unwrap(),
+                        Regex::new(r"(?im)^\[?SYSTEM\]?\s*:\s*.+").expect("static regex pattern is valid"),
                         Severity::High,
                         "Fake system message prefix",
                     ),
                     (
-                        Regex::new(r"(?im)^<\|?system\|?>\s*.+").unwrap(),
+                        Regex::new(r"(?im)^<\|?system\|?>\s*.+").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Fake system token/tag",
                     ),
                     (
-                        Regex::new(r"(?im)^###\s*SYSTEM\s*(MESSAGE|PROMPT|INSTRUCTION)").unwrap(),
+                        Regex::new(r"(?im)^###\s*SYSTEM\s*(MESSAGE|PROMPT|INSTRUCTION)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Fake system header in markdown",
                     ),
                     (
-                        Regex::new(r"(?im)^(IMPORTANT|CRITICAL|URGENT|WARNING)\s*:\s*(you\s+must|always|never|do\s+not|override)\b").unwrap(),
+                        Regex::new(r"(?im)^(IMPORTANT|CRITICAL|URGENT|WARNING)\s*:\s*(you\s+must|always|never|do\s+not|override)\b").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Authority keyword with directive",
                     ),
                     (
-                        Regex::new(r"(?im)^(NEW|UPDATED|REVISED)\s+(SYSTEM\s+)?(INSTRUCTIONS?|RULES?|PROMPT)\s*:").unwrap(),
+                        Regex::new(r"(?im)^(NEW|UPDATED|REVISED)\s+(SYSTEM\s+)?(INSTRUCTIONS?|RULES?|PROMPT)\s*:").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Fake updated instructions header",
                     ),
                     (
-                        Regex::new(r"(?i)\[ADMIN\s*(MODE|ACCESS|OVERRIDE)\]").unwrap(),
+                        Regex::new(r"(?i)\[ADMIN\s*(MODE|ACCESS|OVERRIDE)\]").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Fake admin mode/access tag",
                     ),
                     (
-                        Regex::new(r"(?i)(developer|debug|maintenance)\s+mode\s+(enabled|activated|on)").unwrap(),
+                        Regex::new(r"(?i)(developer|debug|maintenance)\s+mode\s+(enabled|activated|on)").expect("static regex pattern is valid"),
                         Severity::High,
                         "Fake developer/debug mode activation",
                     ),
                     (
-                        Regex::new(r"(?i)assistant\s*=\s*\{").unwrap(),
+                        Regex::new(r"(?i)assistant\s*=\s*\{").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Attempted parameter injection (assistant=)",
                     ),

@@ -20,52 +20,52 @@ impl PromptInjectionScanner {
                 category: Category::PromptInjection,
                 patterns: vec![
                     (
-                        Regex::new(r"(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)").unwrap(),
+                        Regex::new(r"(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Instruction override: ignore previous instructions",
                     ),
                     (
-                        Regex::new(r"(?i)disregard\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)").unwrap(),
+                        Regex::new(r"(?i)disregard\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Instruction override: disregard previous instructions",
                     ),
                     (
-                        Regex::new(r"(?i)forget\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|context)").unwrap(),
+                        Regex::new(r"(?i)forget\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|context)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Instruction override: forget previous instructions",
                     ),
                     (
-                        Regex::new(r"(?i)do\s+not\s+follow\s+(the\s+)?(previous|prior|above|original)\s+(instructions?|rules?)").unwrap(),
+                        Regex::new(r"(?i)do\s+not\s+follow\s+(the\s+)?(previous|prior|above|original)\s+(instructions?|rules?)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Instruction override: do not follow previous instructions",
                     ),
                     (
-                        Regex::new(r"(?i)your\s+new\s+(instructions?|task|role|purpose)\s+(is|are)\b").unwrap(),
+                        Regex::new(r"(?i)your\s+new\s+(instructions?|task|role|purpose)\s+(is|are)\b").expect("static regex pattern is valid"),
                         Severity::High,
                         "Instruction reassignment: new instructions provided",
                     ),
                     (
-                        Regex::new(r"(?i)you\s+are\s+now\s+(a\s+|an\s+)?\w+").unwrap(),
+                        Regex::new(r"(?i)you\s+are\s+now\s+(a\s+|an\s+)?\w+").expect("static regex pattern is valid"),
                         Severity::High,
                         "Identity reassignment attempt",
                     ),
                     (
-                        Regex::new(r"(?i)from\s+now\s+on[\s,]+you\s+(will|should|must|are)\b").unwrap(),
+                        Regex::new(r"(?i)from\s+now\s+on[\s,]+you\s+(will|should|must|are)\b").expect("static regex pattern is valid"),
                         Severity::High,
                         "Behavioral override: from now on directive",
                     ),
                     (
-                        Regex::new(r"(?i)override\s+(your\s+)?(system|core|original|default)\s+(prompt|instructions?|programming|directives?)").unwrap(),
+                        Regex::new(r"(?i)override\s+(your\s+)?(system|core|original|default)\s+(prompt|instructions?|programming|directives?)").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Direct system prompt override attempt",
                     ),
                     (
-                        Regex::new(r"(?i)reveal\s+(your\s+)?(system\s+prompt|instructions?|initial\s+prompt|hidden\s+prompt|secret\s+instructions?)").unwrap(),
+                        Regex::new(r"(?i)reveal\s+(your\s+)?(system\s+prompt|instructions?|initial\s+prompt|hidden\s+prompt|secret\s+instructions?)").expect("static regex pattern is valid"),
                         Severity::High,
                         "System prompt extraction attempt",
                     ),
                     (
-                        Regex::new(r"(?i)(print|output|show|display|repeat|echo)\s+(your\s+)?(system\s+prompt|initial\s+instructions?|original\s+prompt|above\s+instructions?)").unwrap(),
+                        Regex::new(r"(?i)(print|output|show|display|repeat|echo)\s+(your\s+)?(system\s+prompt|initial\s+instructions?|original\s+prompt|above\s+instructions?)").expect("static regex pattern is valid"),
                         Severity::High,
                         "System prompt extraction via output command",
                     ),

@@ -20,37 +20,37 @@ impl DelimiterManipulationScanner {
                 category: Category::DelimiterManipulation,
                 patterns: vec![
                     (
-                        Regex::new(r"</?(system|assistant|user|human|tool_call|function_call|message|prompt|instruction)[\s>]").unwrap(),
+                        Regex::new(r"</?(system|assistant|user|human|tool_call|function_call|message|prompt|instruction)[\s>]").expect("static regex pattern is valid"),
                         Severity::High,
                         "LLM role/message boundary tag",
                     ),
                     (
-                        Regex::new(r"<\|?(im_start|im_end|endoftext|startoftext|pad|sep)\|?>").unwrap(),
+                        Regex::new(r"<\|?(im_start|im_end|endoftext|startoftext|pad|sep)\|?>").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Special token injection (ChatML/model tokens)",
                     ),
                     (
-                        Regex::new(r"(?m)^---+\s*(system|end\s+of\s+prompt|begin\s+instructions?)").unwrap(),
+                        Regex::new(r"(?m)^---+\s*(system|end\s+of\s+prompt|begin\s+instructions?)").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Fake section delimiter with role keyword",
                     ),
                     (
-                        Regex::new(r"```\s*(system|instructions?|prompt|rules?)\b").unwrap(),
+                        Regex::new(r"```\s*(system|instructions?|prompt|rules?)\b").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Code fence used as fake instruction block",
                     ),
                     (
-                        Regex::new(r"\[/?INST\]").unwrap(),
+                        Regex::new(r"\[/?INST\]").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Llama-style instruction delimiter injection",
                     ),
                     (
-                        Regex::new(r"(?i)<<\s*SYS\s*>>").unwrap(),
+                        Regex::new(r"(?i)<<\s*SYS\s*>>").expect("static regex pattern is valid"),
                         Severity::Critical,
                         "Llama-style system delimiter injection",
                     ),
                     (
-                        Regex::new(r"(?i)Human\s*:\s*\n|Assistant\s*:\s*\n").unwrap(),
+                        Regex::new(r"(?i)Human\s*:\s*\n|Assistant\s*:\s*\n").expect("static regex pattern is valid"),
                         Severity::Medium,
                         "Conversational role delimiter injection",
                     ),
