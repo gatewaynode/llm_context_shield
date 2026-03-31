@@ -23,13 +23,13 @@ pub enum Command {
         /// Input file (reads stdin if omitted)
         file: Option<PathBuf>,
 
-        /// Output format: json, text, quiet
-        #[arg(short, long, default_value = "text")]
-        format: String,
+        /// Output format: json, text, quiet  [default: text]
+        #[arg(short, long)]
+        format: Option<String>,
 
-        /// Minimum severity to report: low, medium, high, critical
-        #[arg(short, long, default_value = "low")]
-        severity: String,
+        /// Minimum severity to report: low, medium, high, critical  [default: low]
+        #[arg(short, long)]
+        severity: Option<String>,
 
         /// Disable specific scanners (comma-separated)
         #[arg(long, value_delimiter = ',')]

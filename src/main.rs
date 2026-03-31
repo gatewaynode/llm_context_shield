@@ -4,6 +4,7 @@ use clap::Parser;
 use tracing::{debug, error, info};
 
 use llm_context_shield::cli::{Cli, Command};
+use llm_context_shield::config::Config;
 use llm_context_shield::input::read_input;
 use llm_context_shield::report::output;
 use llm_context_shield::scanner::{ScanReport, Severity};
@@ -12,9 +13,25 @@ use llm_context_shield::scanners;
 fn main() {
     let cli = Cli::parse();
 
-    if cli.log
-        && let Err(e) = llm_context_shield::logging::init()
+    // First-run bootstrap: if invoked with no scan flags and the config dir is
+    // absent, create the directory and write a commented default config file.
+    let no_explicit_args = std::env::args().len() == 2; // binary + subcommand only
+    if no_explicit_args
+        && !Config::config_dir_exists()
+        && let Err(e) = Config::init_default()
     {
+        eprintln!("Warning: could not initialise config: {e}");
+    }
+
+    // Load config; fall back to defaults on missing file, warn on parse error.
+    let config = Config::load().unwrap_or_else(|e| {
+        eprintln!("Warning: could not load config: {e}");
+        Config::default()
+    });
+
+    // --log flag OR config log = true enables logging.
+    let logging_enabled = cli.log || config.log.unwrap_or(false);
+    if logging_enabled && let Err(e) = llm_context_shield::logging::init() {
         eprintln!("Warning: could not initialise log: {e}");
     }
 
@@ -27,6 +44,20 @@ fn main() {
             severity,
             disable,
         } => {
+            // Merge: CLI arg > config > built-in default.
+            let scan_cfg = config.scan.as_ref();
+            let format = format
+                .or_else(|| scan_cfg.and_then(|s| s.format.clone()))
+                .unwrap_or_else(|| "text".to_string());
+            let severity = severity
+                .or_else(|| scan_cfg.and_then(|s| s.severity.clone()))
+                .unwrap_or_else(|| "low".to_string());
+            let disable = if disable.is_empty() {
+                scan_cfg.and_then(|s| s.disable.clone()).unwrap_or_default()
+            } else {
+                disable
+            };
+
             let _scan =
                 tracing::info_span!("scan", file = ?file, format = %format, severity = %severity)
                     .entered();
