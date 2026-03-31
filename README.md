@@ -84,18 +84,50 @@ llm_context_shield scan --disable hidden_content,jailbreak input.txt
 | `data_exfiltration` | Markdown image URL injection, instructions to embed data in requests |
 | `hidden_content` | Zero-width characters, base64 blobs, Cyrillic/Greek homoglyphs |
 
+## Configuration File
+
+On first run (no flags passed), `llm_context_shield` creates a default configuration file at:
+
+```
+~/.config/llm_context_shield/config.toml
+```
+
+`$XDG_CONFIG_HOME` is respected when set. CLI arguments always take precedence over values in the file.
+
+**Example `config.toml`:**
+
+```toml
+# Enable logging to ~/.local/state/llm_context_shield/
+log = true
+
+[scan]
+# Output format: json, text, quiet
+format = "json"
+
+# Minimum severity to report: low, medium, high, critical
+severity = "medium"
+
+# Disable specific scanners by name
+disable = ["hidden_content"]
+```
+
+Any option left out (or commented out) falls back to its CLI default.
+
 ## Options
 
 ```
-llm_context_shield scan [OPTIONS] [FILE]
+llm_context_shield [--log] scan [OPTIONS] [FILE]
+
+Global options:
+      --log                Enable logging to ~/.local/state/llm_context_shield/
 
 Arguments:
   [FILE]  Input file (reads stdin if omitted)
 
-Options:
+Scan options:
   -f, --format <FORMAT>    Output format: json, text, quiet [default: text]
   -s, --severity <LEVEL>   Minimum severity: low, medium, high, critical [default: low]
-      --disable <LIST>      Comma-separated list of scanner names to disable
+      --disable <LIST>     Comma-separated list of scanner names to disable
   -h, --help               Print help
 ```
 
