@@ -1,14 +1,14 @@
 use std::process;
 
 use clap::Parser;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use llm_context_shield::cli::{Cli, Command};
 use llm_context_shield::config::Config;
+use llm_context_shield::engines;
 use llm_context_shield::input::read_input;
-use llm_context_shield::report::output;
+use llm_context_shield::report::{output, write_passthrough};
 use llm_context_shield::scanner::{ScanReport, Severity};
-use llm_context_shield::scanners;
 
 fn main() {
     let cli = Cli::parse();
@@ -43,6 +43,9 @@ fn main() {
             format,
             severity,
             disable,
+            engine,
+            safe_only_passthrough,
+            output: output_file,
         } => {
             // Merge: CLI arg > config > built-in default.
             let scan_cfg = config.scan.as_ref();
@@ -57,10 +60,18 @@ fn main() {
             } else {
                 disable
             };
+            let engine_name = engine
+                .or_else(|| scan_cfg.and_then(|s| s.engine.clone()))
+                .unwrap_or_else(|| "simple".to_string());
 
-            let _scan =
-                tracing::info_span!("scan", file = ?file, format = %format, severity = %severity)
-                    .entered();
+            let _scan = tracing::info_span!(
+                "scan",
+                file = ?file,
+                format = %format,
+                severity = %severity,
+                engine = %engine_name,
+            )
+            .entered();
 
             let min_severity = Severity::from_str_loose(&severity).unwrap_or_else(|| {
                 error!(value = %severity, "invalid severity");
@@ -74,6 +85,12 @@ fn main() {
                 process::exit(2);
             }
 
+            let engine = engines::build(&engine_name).unwrap_or_else(|| {
+                error!(value = %engine_name, "invalid engine");
+                eprintln!("Invalid engine: {engine_name}. Use: simple, yara, syara");
+                process::exit(2);
+            });
+
             let input = match read_input(file.as_deref()) {
                 Ok(text) => text,
                 Err(e) => {
@@ -83,20 +100,8 @@ fn main() {
                 }
             };
 
-            let scanners = scanners::build(&disable);
-            info!(
-                scanners = ?scanners.iter().map(|s| s.name()).collect::<Vec<_>>(),
-                "scanners active"
-            );
-
-            let mut findings = Vec::new();
-            for scanner in &scanners {
-                let before = findings.len();
-                let _s = tracing::debug_span!("scanner", name = scanner.name()).entered();
-                findings.extend(scanner.scan(&input));
-                debug!(findings = findings.len() - before, "complete");
-            }
-
+            info!(engine = engine.name(), "engine active");
+            let findings = engine.run(&input, &disable);
             info!(total = findings.len(), "scan complete");
 
             let filtered_count = findings
@@ -112,13 +117,21 @@ fn main() {
 
             let report = ScanReport::from_findings(findings);
 
-            if let Err(e) = output(&report, &format, min_severity) {
+            if let Err(e) = output(&report, &format, min_severity, safe_only_passthrough) {
                 error!(error = %e, "failed to write output");
                 eprintln!("Error writing output: {e}");
                 process::exit(2);
             }
 
             let has_findings = report.findings.iter().any(|f| f.severity >= min_severity);
+
+            if safe_only_passthrough && !has_findings
+                && let Err(e) = write_passthrough(&input, output_file.as_deref()) {
+                error!(error = %e, "failed to write passthrough");
+                eprintln!("Error writing passthrough: {e}");
+                process::exit(2);
+            }
+
             let exit_code = if has_findings { 1 } else { 0 };
             info!(exit_code, "exit");
             process::exit(exit_code);

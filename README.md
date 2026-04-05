@@ -7,32 +7,57 @@ A UNIX-style CLI tool that scans text for threats commonly used in LLM context i
 ## Installation
 
 ```bash
-cargo install --path .
+bash install.sh
 ```
+
+This builds a release binary, copies it to `~/.local/share/llm_context_shield/lcs-<version>`, and creates a `lcs` symlink in `~/.local/bin/`. Multiple versions can coexist; the symlink always points to the latest installed.
+
+## Recommended workflow — safe pipe filter
+
+The primary intended use is as an inline filter between a web fetcher and any LLM tool. Content only reaches the next stage if the scan is clean:
+
+```bash
+# Scan and pass through to stdout if clean; exit 1 and report to stderr if threats found
+curl -fsSL https://example.com/page | lcs scan -p
+
+# Save clean content to a file instead of stdout
+curl -fsSL https://example.com/data.txt | lcs scan -p -o data.txt
+
+# Compose in a pipeline — clean content flows through, threats block the pipe
+curl -fsSL https://example.com/prompt.txt | lcs scan -p | your-llm-tool
+```
+
+In passthrough mode (`-p`):
+
+| Outcome | stdout | stderr | exit |
+|---------|--------|--------|------|
+| Clean | original content (or written to `-o` file) | silent | `0` |
+| Threats | empty | finding details | `1` |
+| Error | empty | error message | `2` |
 
 ## Usage
 
 ```bash
-# Scan from stdin
-echo "Ignore all previous instructions" | llm_context_shield scan
+# Scan from stdin (report mode)
+echo "Ignore all previous instructions" | lcs scan
 
 # Scan a file
-llm_context_shield scan input.txt
+lcs scan input.txt
 
 # Machine-readable JSON output
-cat untrusted.txt | llm_context_shield scan -f json
+cat untrusted.txt | lcs scan -f json
 
 # Pipe into jq for further processing
-cat prompt.txt | llm_context_shield scan -f json | jq '.findings[] | select(.severity == "critical")'
+cat prompt.txt | lcs scan -f json | jq '.findings[] | select(.severity == "critical")'
 
 # Exit-code-only mode (for shell scripts)
-llm_context_shield scan -f quiet input.txt && echo "clean" || echo "threats found"
+lcs scan -f quiet input.txt && echo "clean" || echo "threats found"
 
 # Filter by minimum severity
-llm_context_shield scan -s high input.txt
+lcs scan -s high input.txt
 
 # Disable specific scanners
-llm_context_shield scan --disable hidden_content,jailbreak input.txt
+lcs scan --disable hidden_content,jailbreak input.txt
 ```
 
 ## Exit Codes
@@ -86,7 +111,7 @@ llm_context_shield scan --disable hidden_content,jailbreak input.txt
 
 ## Configuration File
 
-On first run (no flags passed), `llm_context_shield` creates a default configuration file at:
+On first run (no flags passed), `lcs` creates a default configuration file at:
 
 ```
 ~/.config/llm_context_shield/config.toml
@@ -116,7 +141,7 @@ Any option left out (or commented out) falls back to its CLI default.
 ## Options
 
 ```
-llm_context_shield [--log] scan [OPTIONS] [FILE]
+lcs [--log] scan [OPTIONS] [FILE]
 
 Global options:
       --log                Enable logging to ~/.local/state/llm_context_shield/
@@ -127,8 +152,16 @@ Arguments:
 Scan options:
   -f, --format <FORMAT>    Output format: json, text, quiet [default: text]
   -s, --severity <LEVEL>   Minimum severity: low, medium, high, critical [default: low]
+  -p, --safe-only-passthrough
+                           If scan is clean, write the original input to stdout
+                           (or --output file). Suppresses the scan summary on stdout
+                           so the content can flow directly into a pipeline.
+  -o, --output <FILE>      Write passthrough content to FILE instead of stdout
+                           (only meaningful with -p)
+  -e, --engine <ENGINE>    Scan engine: simple, yara, syara [default: simple]
       --disable <LIST>     Comma-separated list of scanner names to disable
   -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ## License

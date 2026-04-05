@@ -23,8 +23,10 @@ pub struct ScanConfig {
     pub format: Option<String>,
     /// Minimum severity to report: low, medium, high, critical.
     pub severity: Option<String>,
-    /// Scanners to disable (list of scanner names).
+    /// Scanners or rules to disable (list of names).
     pub disable: Option<Vec<String>>,
+    /// Scan engine to use: simple, yara, syara.
+    pub engine: Option<String>,
 }
 
 impl Config {
@@ -96,4 +98,7 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 
 # Disable specific scanners by name
 # disable = []
+
+# Scan engine: simple (regex), yara, syara
+# engine = "simple"
 "#;
