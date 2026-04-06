@@ -7,6 +7,18 @@ pub mod instruction_override;
 pub mod jailbreak;
 pub mod prompt_injection;
 
+/// All registered scanner names in declaration order.
+/// Scanners are independent — a single payload may produce findings from multiple
+/// scanners, and that overlap is intentional: each category carries distinct signal.
+pub const NAMES: &[&str] = &[
+    "prompt_injection",
+    "instruction_override",
+    "jailbreak",
+    "delimiter_manipulation",
+    "data_exfiltration",
+    "hidden_content",
+];
+
 pub fn build(disabled: &[String]) -> Vec<Box<dyn Scanner>> {
     let all: Vec<Box<dyn Scanner>> = vec![
         Box::new(prompt_injection::PromptInjectionScanner::new()),

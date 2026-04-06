@@ -18,7 +18,12 @@ pub fn write_passthrough(input: &str, output_file: Option<&Path>) -> io::Result<
 
 /// `passthrough_mode`: when true, suppress the stdout summary line so the pipe stays clean.
 /// Findings details are still written to stderr in text format.
-pub fn output(report: &ScanReport, format: &str, min_severity: Severity, passthrough_mode: bool) -> io::Result<()> {
+pub fn output(
+    report: &ScanReport,
+    format: &str,
+    min_severity: Severity,
+    passthrough_mode: bool,
+) -> io::Result<()> {
     let filtered: Vec<_> = report
         .findings
         .iter()

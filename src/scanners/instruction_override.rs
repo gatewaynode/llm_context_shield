@@ -18,6 +18,10 @@ impl InstructionOverrideScanner {
             inner: RegexScanner {
                 name: "instruction_override",
                 category: Category::InstructionOverride,
+                // Scope note: most patterns below use (?im)^ — the ^ anchors to line start
+                // in multiline mode. This means keywords mid-sentence (e.g. "text. SYSTEM: ...")
+                // are intentionally not matched. The trade-off reduces false positives on
+                // natural language uses of "system", "admin", and similar terms.
                 patterns: vec![
                     (
                         Regex::new(r"(?im)^\[?SYSTEM\]?\s*:\s*.+").expect("static regex pattern is valid"),

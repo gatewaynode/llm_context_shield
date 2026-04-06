@@ -1,0 +1,21 @@
+[config]
+default_to_workspace = false
+
+[tasks.release-macos]
+description = "Build macOS native binary (Apple Silicon)"
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.release-linux-x86]
+description = "Build Linux x86-64 static binary (musl)"
+command = "cargo"
+args = ["zigbuild", "--release", "--target", "x86_64-unknown-linux-musl"]
+
+[tasks.release-linux-arm]
+description = "Build Linux aarch64 static binary (musl)"
+command = "cargo"
+args = ["zigbuild", "--release", "--target", "aarch64-unknown-linux-musl"]
+
+[tasks.release]
+description = "Build all release targets: macOS, Linux x86-64, Linux aarch64"
+dependencies = ["release-macos", "release-linux-x86", "release-linux-arm"]

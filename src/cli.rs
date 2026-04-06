@@ -48,4 +48,7 @@ pub enum Command {
         #[arg(short = 'o', long, value_name = "FILE")]
         output: Option<PathBuf>,
     },
+
+    /// List available scanner names (for use with --disable)
+    List,
 }

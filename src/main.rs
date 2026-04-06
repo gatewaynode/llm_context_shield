@@ -9,6 +9,7 @@ use llm_context_shield::engines;
 use llm_context_shield::input::read_input;
 use llm_context_shield::report::{output, write_passthrough};
 use llm_context_shield::scanner::{ScanReport, Severity};
+use llm_context_shield::scanners;
 
 fn main() {
     let cli = Cli::parse();
@@ -125,8 +126,10 @@ fn main() {
 
             let has_findings = report.findings.iter().any(|f| f.severity >= min_severity);
 
-            if safe_only_passthrough && !has_findings
-                && let Err(e) = write_passthrough(&input, output_file.as_deref()) {
+            if safe_only_passthrough
+                && !has_findings
+                && let Err(e) = write_passthrough(&input, output_file.as_deref())
+            {
                 error!(error = %e, "failed to write passthrough");
                 eprintln!("Error writing passthrough: {e}");
                 process::exit(2);
@@ -135,6 +138,11 @@ fn main() {
             let exit_code = if has_findings { 1 } else { 0 };
             info!(exit_code, "exit");
             process::exit(exit_code);
+        }
+        Command::List => {
+            for name in scanners::NAMES {
+                println!("{name}");
+            }
         }
     }
 }

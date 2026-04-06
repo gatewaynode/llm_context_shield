@@ -164,6 +164,53 @@ Scan options:
   -V, --version            Print version
 ```
 
+## Roadmap
+
+### Current: v0.2 — Regex Engine (simple)
+
+The `simple` engine is fully implemented with 6 scanner categories covering prompt
+injection, jailbreaks, data exfiltration, hidden content, delimiter manipulation,
+and instruction overrides. All detection uses hardcoded Rust regex patterns.
+
+### Phase 1: Foundation
+
+Prepare the codebase for multi-engine support:
+
+- `engines::build()` returns `Result` with contextual errors (not just `Option`)
+- `Category::from_str_loose()` for mapping rule metadata to finding types
+- Rule discovery module (`src/rules.rs`) — load bundled rules and user rules from
+  `~/.local/share/llm_context_shield/rules/`
+- Config extensions: `[rules]` and `[syara]` sections in `config.toml`
+
+### Phase 2: YARA-X Engine (`--engine yara`)
+
+Pattern matching via [YARA-X](https://github.com/VirusTotal/yara-x) (VirusTotal's
+pure-Rust YARA reimplementation):
+
+- Bundled `.yar` rules porting all 6 scanner categories from the regex engine
+- User-authored `.yar` rules loaded from the XDG data directory
+- Rule metadata (`category`, `severity`, `description`) mapped to `Finding` structs
+- Feature-gated: `cargo build --features yara`
+
+### Phase 3: SYARA-X Engine (`--engine syara`)
+
+Semantic detection via [SYARA-X](../syara-x/) (Super YARA), extending YARA syntax
+with embedding similarity, ML classifiers, and LLM evaluation:
+
+- String/regex rules work without any external services (CI-friendly)
+- Semantic matchers (SBERT, classifier, LLM) use Ollama — configurable via `[syara]` config
+- Cheapest-first execution pipeline with short-circuit optimization
+- Feature-gated: `cargo build --features syara` (string-only) or
+  `cargo build --features syara-llm,syara-sbert,syara-classifier` (full)
+
+### Phase 4: Polish
+
+- `lcs list` extended to show rule names for yara/syara engines
+- `lcs init --rules` to scaffold the user rules directory
+- Rule-authoring guide and migration docs
+
+> See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
