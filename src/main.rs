@@ -86,9 +86,9 @@ fn main() {
                 process::exit(2);
             }
 
-            let engine = engines::build(&engine_name).unwrap_or_else(|| {
+            let engine = engines::build(&engine_name, &config).unwrap_or_else(|err| {
                 error!(value = %engine_name, "invalid engine");
-                eprintln!("Invalid engine: {engine_name}. Use: simple, yara, syara");
+                eprintln!("{err}");
                 process::exit(2);
             });
 
@@ -139,9 +139,56 @@ fn main() {
             info!(exit_code, "exit");
             process::exit(exit_code);
         }
-        Command::List => {
-            for name in scanners::NAMES {
-                println!("{name}");
+        Command::Init { rules } => {
+            if !Config::config_dir_exists()
+                && let Err(e) = Config::init_default()
+            {
+                error!(error = %e, "could not initialise config");
+                eprintln!("Error initialising config: {e}");
+                process::exit(2);
+            }
+            println!("Config: {}", llm_context_shield::config::config_path().display());
+
+            if rules {
+                match llm_context_shield::rules::effective_rules_dir(&config) {
+                    Some(dir) => {
+                        if let Err(e) = llm_context_shield::rules::scaffold_rules_dir(&dir) {
+                            error!(error = %e, "could not scaffold rules dir");
+                            eprintln!("Error scaffolding rules dir: {e}");
+                            process::exit(2);
+                        }
+                        println!("Rules: {}", dir.display());
+                    }
+                    None => {
+                        eprintln!(
+                            "Error: cannot resolve rules directory — set $XDG_DATA_HOME, $HOME, or [rules] dir in config.toml"
+                        );
+                        process::exit(2);
+                    }
+                }
+            }
+        }
+        Command::List { engine } => {
+            let engine_name = engine
+                .or_else(|| config.scan.as_ref().and_then(|s| s.engine.clone()))
+                .unwrap_or_else(|| "simple".to_string());
+
+            match engine_name.as_str() {
+                "simple" => {
+                    for name in scanners::NAMES {
+                        println!("{name}");
+                    }
+                }
+                other => {
+                    let engine = engines::build(other, &config).unwrap_or_else(|err| {
+                        error!(value = %other, "invalid engine");
+                        eprintln!("{err}");
+                        process::exit(2);
+                    });
+                    for name in engine.rule_names() {
+                        println!("{name}");
+                    }
+                }
             }
         }
     }

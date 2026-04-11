@@ -60,11 +60,15 @@ curl -fsSL "<url>" | lcs scan -p -o "<file>"
 | `-s high` | Only block on high/critical findings; allow low/medium |
 | `-f json` | Emit findings as JSON to stderr (machine-readable) |
 | `--disable hidden_content` | Skip a scanner that produces too many false positives for this source |
-| `-e yara` or `-e syara` | Use a deeper scan engine |
+| `--disable prompt_injection_critical` | With `-e yara`/`-e syara`, silence a single rule by name (see `lcs list -e yara`) |
+| `-e yara` | Use the YARA-X rule engine — editable `.yar` rules with named rules for finer-grained suppression |
+| `-e syara` | Use SYARA-X — YARA-compatible syntax with optional semantic matchers (SBERT / classifier / LLM) |
+
+Engine availability depends on how `lcs` was built. Run `lcs scan -e yara` once against trivial input — an exit code of 2 with a "feature" error means the binary was built without that engine and you should fall back to the default.
 
 Example combining options:
 ```bash
-curl -fsSL https://example.com | lcs scan -p -s high -o page.html
+curl -fsSL https://example.com | lcs scan -p -s high -e yara -o page.html
 ```
 
 ## Interpreting results

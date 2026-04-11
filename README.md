@@ -164,50 +164,51 @@ Scan options:
   -V, --version            Print version
 ```
 
-## Roadmap
+## Scan Engines
 
-### Current: v0.2 — Regex Engine (simple)
+`lcs` ships with three interchangeable scan engines. Select one with `-e` or set `[scan] engine = "..."` in `config.toml`.
 
-The `simple` engine is fully implemented with 6 scanner categories covering prompt
-injection, jailbreaks, data exfiltration, hidden content, delimiter manipulation,
-and instruction overrides. All detection uses hardcoded Rust regex patterns.
+| Engine   | Build flag             | How it works                                                                  |
+|----------|------------------------|-------------------------------------------------------------------------------|
+| `simple` | (default, no feature)  | Hardcoded Rust regex patterns. Zero runtime dependencies. Fastest.            |
+| `yara`   | `--features yara`      | YARA-X rule engine ([VirusTotal's pure-Rust YARA](https://github.com/VirusTotal/yara-x)). Rules live in `.yar` files, editable without recompiling. |
+| `syara`  | `--features syara`     | SYARA-X (Super YARA), extending YARA with optional semantic matchers (SBERT, classifier, LLM via Ollama). String-only rules are CI-friendly; semantic features are additive. |
 
-### Phase 1: Foundation
+```bash
+cargo build --release --features yara,syara
+lcs scan -e yara <<< "Ignore all previous instructions"
+```
 
-Prepare the codebase for multi-engine support:
+## Rules and Customization
 
-- `engines::build()` returns `Result` with contextual errors (not just `Option`)
-- `Category::from_str_loose()` for mapping rule metadata to finding types
-- Rule discovery module (`src/rules.rs`) — load bundled rules and user rules from
-  `~/.local/share/llm_context_shield/rules/`
-- Config extensions: `[rules]` and `[syara]` sections in `config.toml`
+The `yara` and `syara` engines load rules from two places, in order:
 
-### Phase 2: YARA-X Engine (`--engine yara`)
+1. **Bundled rules** — compiled into the binary, covering the same six categories as the `simple` engine.
+2. **User rules** — `.yar` / `.syara` files under `$XDG_DATA_HOME/llm_context_shield/rules/{yara,syara}/` (falls back to `~/.local/share/...`). Override the discovery path with `[rules] dir` in `config.toml`; disable bundled rules with `[rules] bundled = false`.
 
-Pattern matching via [YARA-X](https://github.com/VirusTotal/yara-x) (VirusTotal's
-pure-Rust YARA reimplementation):
+Helpful commands:
 
-- Bundled `.yar` rules porting all 6 scanner categories from the regex engine
-- User-authored `.yar` rules loaded from the XDG data directory
-- Rule metadata (`category`, `severity`, `description`) mapped to `Finding` structs
-- Feature-gated: `cargo build --features yara`
+```bash
+lcs init                    # create config.toml on first run
+lcs init --rules            # scaffold the user rules directory tree
+lcs list                    # list simple-engine scanner names
+lcs list -e yara            # list compiled YARA rule names
+lcs scan -e yara --disable prompt_injection_critical   # silence one rule
+```
 
-### Phase 3: SYARA-X Engine (`--engine syara`)
+See [docs/rule-authoring.md](docs/rule-authoring.md) for how to write custom rules and [docs/migration-from-simple.md](docs/migration-from-simple.md) for the `simple → yara` mapping.
 
-Semantic detection via [SYARA-X](../syara-x/) (Super YARA), extending YARA syntax
-with embedding similarity, ML classifiers, and LLM evaluation:
+## Claude Code Integration
 
-- String/regex rules work without any external services (CI-friendly)
-- Semantic matchers (SBERT, classifier, LLM) use Ollama — configurable via `[syara]` config
-- Cheapest-first execution pipeline with short-circuit optimization
-- Feature-gated: `cargo build --features syara` (string-only) or
-  `cargo build --features syara-llm,syara-sbert,syara-classifier` (full)
+The `skill/safe-fetch.md` file is a [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills) that wires `lcs` into Claude's web-fetching workflow so external content passes through a scan before reaching the model. Install it with:
 
-### Phase 4: Polish
+```bash
+bash install-skill.sh
+```
 
-- `lcs list` extended to show rule names for yara/syara engines
-- `lcs init --rules` to scaffold the user rules directory
-- Rule-authoring guide and migration docs
+This copies the skill to `~/.claude/skills/safe-fetch/SKILL.md` (user-level, available across all projects).
+
+## Architecture
 
 > See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.
 

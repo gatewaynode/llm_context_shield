@@ -49,6 +49,25 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 
-    /// List available scanner names (for use with --disable)
-    List,
+    /// Scaffold config and/or rules directories under XDG paths.
+    ///
+    /// With no flags, ensures the config dir and default `config.toml` exist.
+    /// With `--rules`, additionally scaffolds `<rules_dir>/{yara,syara}/` and
+    /// writes a README stub explaining how to drop custom rule files.
+    Init {
+        /// Also create the rules directory tree (`yara/`, `syara/`) with a README stub.
+        #[arg(long)]
+        rules: bool,
+    },
+
+    /// List available scanner or rule names (for use with --disable)
+    ///
+    /// With no engine flag, lists the built-in `simple` scanner names.
+    /// With `-e yara` or `-e syara`, lists rule names compiled into the
+    /// corresponding engine (bundled + discovered).
+    List {
+        /// Engine whose rule names should be listed: simple, yara, syara
+        #[arg(short = 'e', long)]
+        engine: Option<String>,
+    },
 }

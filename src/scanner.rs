@@ -59,6 +59,20 @@ impl fmt::Display for Category {
     }
 }
 
+impl Category {
+    pub fn from_str_loose(s: &str) -> Option<Category> {
+        match s.to_lowercase().as_str() {
+            "prompt_injection" => Some(Category::PromptInjection),
+            "hidden_content" => Some(Category::HiddenContent),
+            "data_exfiltration" => Some(Category::DataExfiltration),
+            "jailbreak" => Some(Category::Jailbreak),
+            "delimiter_manipulation" => Some(Category::DelimiterManipulation),
+            "instruction_override" => Some(Category::InstructionOverride),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Finding {
     pub category: Category,
@@ -128,5 +142,70 @@ impl RegexScanner {
             }
         }
         findings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn category_from_str_loose_all_variants() {
+        assert_eq!(
+            Category::from_str_loose("prompt_injection"),
+            Some(Category::PromptInjection)
+        );
+        assert_eq!(
+            Category::from_str_loose("hidden_content"),
+            Some(Category::HiddenContent)
+        );
+        assert_eq!(
+            Category::from_str_loose("data_exfiltration"),
+            Some(Category::DataExfiltration)
+        );
+        assert_eq!(
+            Category::from_str_loose("jailbreak"),
+            Some(Category::Jailbreak)
+        );
+        assert_eq!(
+            Category::from_str_loose("delimiter_manipulation"),
+            Some(Category::DelimiterManipulation)
+        );
+        assert_eq!(
+            Category::from_str_loose("instruction_override"),
+            Some(Category::InstructionOverride)
+        );
+    }
+
+    #[test]
+    fn category_from_str_loose_case_insensitive() {
+        assert_eq!(
+            Category::from_str_loose("PROMPT_INJECTION"),
+            Some(Category::PromptInjection)
+        );
+        assert_eq!(
+            Category::from_str_loose("Jailbreak"),
+            Some(Category::Jailbreak)
+        );
+    }
+
+    #[test]
+    fn category_round_trip_display() {
+        for cat in [
+            Category::PromptInjection,
+            Category::HiddenContent,
+            Category::DataExfiltration,
+            Category::Jailbreak,
+            Category::DelimiterManipulation,
+            Category::InstructionOverride,
+        ] {
+            assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
+        }
+    }
+
+    #[test]
+    fn category_from_str_loose_unknown() {
+        assert_eq!(Category::from_str_loose("not_a_category"), None);
+        assert_eq!(Category::from_str_loose(""), None);
     }
 }

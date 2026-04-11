@@ -14,6 +14,27 @@ pub struct Config {
     pub log: Option<bool>,
     /// Scan subcommand defaults.
     pub scan: Option<ScanConfig>,
+    /// Rule discovery configuration (for yara/syara engines).
+    pub rules: Option<RulesConfig>,
+    /// SYARA engine semantic matcher configuration.
+    pub syara: Option<SyaraConfig>,
+}
+
+/// Rule-file discovery configuration.
+#[derive(Deserialize, Default)]
+pub struct RulesConfig {
+    /// Override the rules directory. When unset, falls back to the XDG data dir.
+    pub dir: Option<String>,
+    /// Whether to load bundled (built-in) rules. Default: true.
+    pub bundled: Option<bool>,
+}
+
+/// SYARA engine semantic matcher configuration.
+#[derive(Deserialize, Default)]
+pub struct SyaraConfig {
+    pub ollama_url: Option<String>,
+    pub embed_model: Option<String>,
+    pub llm_model: Option<String>,
 }
 
 /// Configuration defaults for the `scan` subcommand.
@@ -101,4 +122,23 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 
 # Scan engine: simple (regex), yara, syara
 # engine = "simple"
+
+[rules]
+# Override the default rules directory.
+# Default: $XDG_DATA_HOME/llm_context_shield/rules/
+# dir = "/path/to/custom/rules"
+
+# Whether to load bundled (built-in) rules. Default: true.
+# bundled = true
+
+[syara]
+# Ollama base URL for semantic matchers.
+# Default: http://localhost:11434
+# ollama_url = "http://localhost:11434"
+
+# Model name for embedding-based matchers (sbert, classifier).
+# embed_model = "all-minilm"
+
+# Model name for LLM evaluator.
+# llm_model = "llama3.2"
 "#;

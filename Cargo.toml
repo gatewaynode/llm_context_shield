@@ -1,6 +1,6 @@
 [package]
 name = "llm_context_shield"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "UNIX-style CLI scanner for LLM context injection threats"
@@ -14,6 +14,16 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 tracing-appender = "0.2"
 toml = "0.8"
+yara-x = { path = "../yara-x/lib", optional = true }
+syara-x = { path = "../syara-x/syara", optional = true }
+
+[features]
+default = []
+yara = ["dep:yara-x"]
+syara = ["dep:syara-x"]
+syara-sbert = ["syara", "syara-x/sbert"]
+syara-classifier = ["syara", "syara-x/classifier"]
+syara-llm = ["syara", "syara-x/llm"]
 
 [dev-dependencies]
 assert_cmd = "2"
