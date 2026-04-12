@@ -212,6 +212,36 @@ This copies the skill to `~/.claude/skills/safe-fetch/SKILL.md` (user-level, ava
 
 > See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.
 
+## Roadmap
+
+### Phase 5 — Cross-platform release builds
+
+Extend `Makefile.toml` (currently macOS arm64, Linux x86-64/aarch64 musl) to cover Windows, Intel Mac, and BSDs. Adds `cargo make release` checksums and a target matrix in the README.
+
+- Windows x86-64 and ARM64 via `cargo-zigbuild`
+- macOS x86-64 (Intel)
+- FreeBSD x86-64, OpenBSD x86-64 (tier 3), NetBSD x86-64 (tier 2)
+- SHA-256 release manifest, Windows smoke test
+
+### Phase 6 — Library crate
+
+Turn `llm_context_shield` into a proper Rust library crate with a stable API surface, so downstream programs can embed scanning without the CLI.
+
+- `Shield::builder().engine("yara").build()?.scan(text)` builder API
+- `[lib]` + `[[bin]]` split; CLI deps gated behind a default-on `cli` feature
+- Rustdoc, examples, semver policy, `cargo publish --dry-run`
+
+### Phase 7 — Heuristic threat scoring
+
+Replace the single-pass scan model with multi-pass, threshold-gated evaluation. Rules declare a **threat level** (score contributed on match), a **threshold** (minimum accumulated score before the rule is evaluated), and a **threat class** (heuristic branch). This lets sensitive rules stay silent until cheaper rules have raised enough suspicion — and enables branching heuristic paths that go deep on specific threat classes without over-scanning clean input.
+
+- Per-class and cumulative score accumulators with cross-branch escalation
+- Multi-pass scanning: pre-compiled rule groups by threshold tier
+- Weight factor per class for future false-positive dampening from real-world data
+- Scores exposed in JSON output for downstream consumption
+
+See [tasks/todo.md](tasks/todo.md) for the full checklist.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
