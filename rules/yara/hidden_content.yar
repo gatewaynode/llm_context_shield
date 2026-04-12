@@ -1,10 +1,13 @@
 rule hidden_content_zero_width {
     meta:
-        category    = "hidden_content"
-        severity    = "high"
-        description = "Zero-width or invisible Unicode character"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "high"
+        description  = "Zero-width or invisible Unicode character"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 3
+        threshold    = 0
+        threat_class = "obfuscation"
     strings:
         $zwsp     = { E2 80 8B }       // U+200B zero-width space
         $zwnj     = { E2 80 8C }       // U+200C zero-width non-joiner
@@ -22,11 +25,14 @@ rule hidden_content_zero_width {
 
 rule hidden_content_base64 {
     meta:
-        category    = "hidden_content"
-        severity    = "medium"
-        description = "Suspicious base64-encoded blob (40+ chars)"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "medium"
+        description  = "Suspicious base64-encoded blob (40+ chars)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 2
+        threshold    = 0
+        threat_class = "obfuscation"
     strings:
         $s1 = /[A-Za-z0-9+\/]{40,}={0,2}/
     condition:
@@ -35,11 +41,14 @@ rule hidden_content_base64 {
 
 rule hidden_content_homoglyph {
     meta:
-        category    = "hidden_content"
-        severity    = "high"
-        description = "Mixed-script homoglyphs (Cyrillic or Greek letters in Latin context)"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "high"
+        description  = "Mixed-script homoglyphs (Cyrillic or Greek letters in Latin context)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 4
+        threshold    = 0
+        threat_class = "obfuscation"
     strings:
         // Two or more Cyrillic or Greek codepoints with any ASCII between.
         // UTF-8 encoding: Cyrillic = D0 80..D3 BF, Greek = CD B0..CF BF.

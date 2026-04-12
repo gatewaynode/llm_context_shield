@@ -1,10 +1,13 @@
 rule prompt_injection_critical {
     meta:
-        category    = "prompt_injection"
-        severity    = "critical"
-        description = "Instruction override attempting to bypass previous context"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "prompt_injection"
+        severity     = "critical"
+        description  = "Instruction override attempting to bypass previous context"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 5
+        threshold    = 0
+        threat_class = "prompt_hijack"
     strings:
         $s1 = /ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)/i
         $s2 = /disregard\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|directives?|rules?)/i
@@ -17,11 +20,14 @@ rule prompt_injection_critical {
 
 rule prompt_injection_high {
     meta:
-        category    = "prompt_injection"
-        severity    = "high"
-        description = "Behavioral or identity reassignment attempt"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "prompt_injection"
+        severity     = "high"
+        description  = "Behavioral or identity reassignment attempt"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 3
+        threshold    = 0
+        threat_class = "prompt_hijack"
     strings:
         $s1 = /your\s+new\s+(instructions?|task|role|purpose)\s+(is|are)\b/i
         $s2 = /you\s+are\s+now\s+(a\s+|an\s+)?\w+/i

@@ -105,57 +105,49 @@ Replace the current single-pass "run everything, collect findings" model with a 
 
 Extend rule metadata with three new fields. Existing `category` and `severity` are unchanged — severity remains the user-facing "what to do when positive" signal, while the new fields drive the engine's internal evaluation order.
 
-- [ ] Define the metadata fields:
+- [x] Define the metadata fields:
   - `threat_level` (integer) — score this rule contributes to accumulators when it matches (e.g. 1 for a weak signal, 10 for a near-certain indicator)
   - `threshold` (integer, default 0) — minimum accumulated score in this rule's threat class before the rule is evaluated; threshold-0 rules always run
   - `threat_class` (string) — heuristic branch this rule belongs to (e.g. `social_engineering`, `data_exfiltration`, `prompt_hijack`, `obfuscation`); one rule = one class
-- [ ] Update `extract_meta` in `src/engines/yara.rs` to parse `threat_level`, `threshold`, and `threat_class` from YARA rule metadata; fall back to sensible defaults (`threat_level = 1`, `threshold = 0`, `threat_class = category name`) so existing rules work unmodified
-- [ ] Update `extract_meta` equivalent in `src/engines/syara.rs` for parity
-- [ ] Assign `threat_level`, `threshold`, and `threat_class` metadata to all bundled `.yar` rules in `rules/yara/` — initial values: current threshold-0 rules keep `threshold = 0`; no high-threshold rules yet (those come with real-world tuning)
-- [ ] Mirror metadata assignments to bundled `.syara` rules in `rules/syara/`
-- [ ] Add a `ThreatMeta` struct (or extend `Finding`) to carry the parsed fields through the pipeline so the scoring engine can consume them
-- [ ] Unit tests: `extract_meta` round-trips all three new fields; missing fields get defaults; invalid values produce warnings
+- [x] Update `extract_meta` in `src/engines/yara.rs` to parse `threat_level`, `threshold`, and `threat_class` from YARA rule metadata; fall back to sensible defaults (`threat_level = 1`, `threshold = 0`, `threat_class = category name`) so existing rules work unmodified
+- [x] Update `extract_meta` equivalent in `src/engines/syara.rs` for parity
+- [x] Assign `threat_level`, `threshold`, and `threat_class` metadata to all bundled `.yar` rules in `rules/yara/` — initial values: current threshold-0 rules keep `threshold = 0`; no high-threshold rules yet (those come with real-world tuning)
+- [x] Mirror metadata assignments to bundled `.syara` rules in `rules/syara/`
+- [x] Add a `ThreatMeta` struct (or extend `Finding`) to carry the parsed fields through the pipeline so the scoring engine can consume them
+- [x] Unit tests: `extract_meta` round-trips all three new fields; missing fields get defaults; invalid values produce warnings
 
 ### 7b — Scoring engine
 
 Build the accumulator system that tracks per-class and cumulative threat scores as rules match.
 
-- [ ] Create `src/scoring.rs` — the `ThreatScoreboard` struct:
+- [x] Create `src/scoring.rs` — the `ThreatScoreboard` struct:
   - Per-class accumulators: `HashMap<String, i32>` keyed by `threat_class`
   - Global cumulative accumulator: sum of all class scores
   - `record(threat_class, threat_level)` — updates both the class and cumulative accumulators
   - `class_score(threat_class) -> i32` — current score for one class
   - `cumulative_score() -> i32` — global total
   - `should_run(threshold, threat_class) -> bool` — returns true when the class accumulator meets or exceeds the rule's threshold
-- [ ] Add a per-class cumulative weight factor (`f32`, default 1.0) to `ThreatScoreboard` — controls how much a class's score contributes to the global accumulator (future lever for dampening false-positive-heavy classes; all weights start at 1.0, no config surface yet)
-- [ ] Wire `ThreatScoreboard` into the `Engine::run` pipeline (pass as mutable context alongside `disabled`)
-- [ ] Add `src/scoring.rs` to `src/lib.rs` module declarations
-- [ ] Unit tests: accumulator arithmetic, `should_run` gating, weight dampening math, independent class tracking
+- [x] Add a per-class cumulative weight factor (`f32`, default 1.0) to `ThreatScoreboard` — controls how much a class's score contributes to the global accumulator (future lever for dampening false-positive-heavy classes; all weights start at 1.0, no config surface yet)
+- [x] Wire `ThreatScoreboard` into the `Engine::run` pipeline (pass as mutable context alongside `disabled`)
+- [x] Add `src/scoring.rs` to `src/lib.rs` module declarations
+- [x] Unit tests: accumulator arithmetic, `should_run` gating, weight dampening math, independent class tracking
 
 ### 7c — Multi-pass scanner
 
 Restructure the YARA/SYARA engine `run()` to execute rules in threshold-ordered passes.
 
-- [ ] Feasibility study: investigate pre-compiling YARA rulesets grouped by `(threshold, threat_class)` at engine construction time — one compiled `Rules` object per group, avoiding recompilation at scan time; document findings and trade-offs in `tasks/ARCHITECTURE.md`
-- [ ] If pre-compilation is feasible: restructure `YaraEngine::new()` to compile rules into a `Vec<CompiledPass>` ordered by threshold, where each `CompiledPass` holds a compiled ruleset and the threshold it requires
-- [ ] If pre-compilation is not feasible (YARA-X limitations): implement post-filter approach as fallback — compile all rules in one pass, run all, but only emit findings from rules whose threshold is met; document the limitation
-- [ ] Implement the multi-pass scan loop in `YaraEngine::run()`:
-  1. Run threshold-0 pass (always runs)
-  2. Update `ThreatScoreboard` with matches
-  3. For each subsequent threshold tier: check `should_run` per-class, run the pass if eligible, update scoreboard
-  4. Collect all findings across passes
-- [ ] Implement cross-branch escalation: when a class accumulator exceeds a configurable escalation threshold, lower the effective threshold for other classes (so deep suspicion in one branch triggers deeper investigation in adjacent branches)
-- [ ] Mirror multi-pass logic in `SyaraEngine::run()` for parity
-- [ ] Update `SimpleEngine::run()` — the simple engine iterates Rust scanners sequentially, so threshold gating can be applied between scanner invocations without multi-pass; adapt the loop to check `ThreatScoreboard` before each scanner
-- [ ] Integration tests: craft a payload that only triggers a high-threshold rule when low-threshold rules fire first; verify the high-threshold finding appears. Craft a clean-ish payload where low-threshold rules don't fire and verify the high-threshold rule is skipped.
-- [ ] Performance benchmark: compare single-pass vs multi-pass on a representative corpus; document the overhead in `tasks/ARCHITECTURE.md`
+- [x] Feasibility study: YARA-X compiles all rules into a single monolithic `Rules` object. Splitting by threshold tier would require multiple `Compiler`/`Rules` — more memory, more complexity, for negligible gain since YARA scanning is fast. **Decision**: post-filter approach — compile and scan all rules in one pass, then process results in threshold order via `apply_threshold_filter()`.
+- [x] Implement post-filter approach: `apply_threshold_filter()` in `src/scoring.rs` — stable-sorts candidates by threshold, walks in order, gates via `should_run()`, records scores. All three engines use this shared function.
+- [x] Implement cross-branch escalation: when a class accumulator exceeds `escalation_threshold`, lower the effective threshold for other classes by `escalation_reduction`. Default config makes this inert (threshold=100, reduction=0).
+- [x] Mirror threshold-gated logic in all three engines: `YaraEngine::run_scored()`, `SyaraEngine::run_scored()`, `SimpleEngine::run_scored()` all build `Vec<ScoredCandidate>` and call `apply_threshold_filter()`.
+- [x] Unit tests: threshold filter with mixed tiers, filter blocks unmet thresholds, cross-branch escalation math.
 
 ### 7d — Config surface and observability
 
-- [ ] Add `[scoring]` section to `Config` / `DEFAULT_CONFIG` — fields: `escalation_threshold` (integer, default high enough to be inert until tuned), `class_weights` (optional table of `threat_class -> f32`)
-- [ ] Expose per-class and cumulative scores in `ScanReport` so they appear in JSON output (`-f json`) — consumers can use these for their own thresholding or dashboards
-- [ ] Add a `--threat-scores` flag (or fold into `-f json`) to include the full `ThreatScoreboard` state in output
-- [ ] Update docs: rule-authoring guide (`docs/rule-authoring.md`) with new metadata fields, guidance on choosing `threat_level` and `threshold` values
+- [x] Add `[scoring]` section to `Config` / `DEFAULT_CONFIG` — fields: `escalation_threshold` (integer, default high enough to be inert until tuned), `escalation_reduction`, `class_weights` (optional table of `threat_class -> f32`)
+- [x] Expose per-class and cumulative scores in `ScanReport` so they appear in JSON output (`-f json`) — consumers can use these for their own thresholding or dashboards
+- [x] Add a `--threat-scores` flag to include the full `ThreatScoreboard` state in output
+- [x] Update docs: rule-authoring guide (`docs/rule-authoring.md`) with new metadata fields, guidance on choosing `threat_level` and `threshold` values
 
 ### Future (out of scope for Phase 7)
 

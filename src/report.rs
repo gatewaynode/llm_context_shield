@@ -17,12 +17,14 @@ pub fn write_passthrough(input: &str, output_file: Option<&Path>) -> io::Result<
 }
 
 /// `passthrough_mode`: when true, suppress the stdout summary line so the pipe stays clean.
+/// `show_scores`: when true, include threat scores in output.
 /// Findings details are still written to stderr in text format.
 pub fn output(
     report: &ScanReport,
     format: &str,
     min_severity: Severity,
     passthrough_mode: bool,
+    show_scores: bool,
 ) -> io::Result<()> {
     let filtered: Vec<_> = report
         .findings
@@ -32,11 +34,15 @@ pub fn output(
 
     match format {
         "json" => {
-            let filtered_report = serde_json::json!({
+            let mut filtered_report = serde_json::json!({
                 "clean": filtered.is_empty(),
                 "finding_count": filtered.len(),
                 "findings": filtered,
             });
+            if let Some(scores) = &report.scores {
+                filtered_report["threat_scores"] =
+                    serde_json::to_value(scores).unwrap_or_default();
+            }
             let stdout = io::stdout();
             let mut out = stdout.lock();
             serde_json::to_writer_pretty(&mut out, &filtered_report)
@@ -59,6 +65,16 @@ pub fn output(
                 )?;
                 writeln!(err, "  matched: {:?}", f.matched_text)?;
                 writeln!(err, "  at bytes: {}..{}", f.byte_range.0, f.byte_range.1)?;
+                writeln!(err)?;
+            }
+            if show_scores
+                && let Some(scores) = &report.scores
+            {
+                writeln!(err, "Threat scores:")?;
+                writeln!(err, "  cumulative: {}", scores.cumulative_score())?;
+                for (class, score) in scores.class_scores() {
+                    writeln!(err, "  {class}: {score}")?;
+                }
                 writeln!(err)?;
             }
             if !passthrough_mode {

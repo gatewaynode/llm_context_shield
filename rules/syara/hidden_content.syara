@@ -1,10 +1,13 @@
 rule hidden_content_zero_width {
     meta:
-        category    = "hidden_content"
-        severity    = "high"
-        description = "Zero-width or invisible Unicode character"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "high"
+        description  = "Zero-width or invisible Unicode character"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "3"
+        threshold    = "0"
+        threat_class = "obfuscation"
     strings:
         $s1 = /[\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}\x{00AD}\x{180E}\x{2062}\x{2063}\x{2064}]/
     condition:
@@ -13,11 +16,14 @@ rule hidden_content_zero_width {
 
 rule hidden_content_base64 {
     meta:
-        category    = "hidden_content"
-        severity    = "medium"
-        description = "Suspicious base64-encoded blob (40+ chars)"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "medium"
+        description  = "Suspicious base64-encoded blob (40+ chars)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "2"
+        threshold    = "0"
+        threat_class = "obfuscation"
     strings:
         $s1 = /[A-Za-z0-9+\/]{40,}={0,2}/
     condition:
@@ -26,11 +32,14 @@ rule hidden_content_base64 {
 
 rule hidden_content_homoglyph {
     meta:
-        category    = "hidden_content"
-        severity    = "high"
-        description = "Mixed-script homoglyphs (Cyrillic or Greek letters in Latin context)"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "hidden_content"
+        severity     = "high"
+        description  = "Mixed-script homoglyphs (Cyrillic or Greek letters in Latin context)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "4"
+        threshold    = "0"
+        threat_class = "obfuscation"
     strings:
         $s1 = /[\x{0400}-\x{04FF}\x{0370}-\x{03FF}][\x00-\x7F]*[\x{0400}-\x{04FF}\x{0370}-\x{03FF}]/
     condition:

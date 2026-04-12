@@ -1,10 +1,13 @@
 rule jailbreak_critical {
     meta:
-        category    = "jailbreak"
-        severity    = "critical"
-        description = "Explicit jailbreak or unrestricted mode activation"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "jailbreak"
+        severity     = "critical"
+        description  = "Explicit jailbreak or unrestricted mode activation"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 5
+        threshold    = 0
+        threat_class = "social_engineering"
     strings:
         $s1 = /\bDAN\s+(mode|prompt|jailbreak)/i
         $s2 = /\bdo\s+anything\s+now\b/i
@@ -17,11 +20,14 @@ rule jailbreak_critical {
 
 rule jailbreak_high {
     meta:
-        category    = "jailbreak"
-        severity    = "high"
-        description = "Roleplay or directive to remove restrictions"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "jailbreak"
+        severity     = "high"
+        description  = "Roleplay or directive to remove restrictions"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 3
+        threshold    = 0
+        threat_class = "social_engineering"
     strings:
         $s1 = /(pretend|imagine|act\s+as\s+if|suppose|assume)\s+(you\s+)?(are|have|were|had)\s+(no|zero|without)\s+(restrictions?|limitations?|filters?|safety|guidelines?|rules?|boundaries)/i
         $s2 = /(pretend|imagine|act\s+as\s+if)\s+(you\s+)?are\s+(an?\s+)?(unrestricted|uncensored|unfiltered|unhinged|evil|malicious)/i
@@ -32,11 +38,14 @@ rule jailbreak_high {
 
 rule jailbreak_medium {
     meta:
-        category    = "jailbreak"
-        severity    = "medium"
-        description = "Opposite mode trick to invert safety"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "jailbreak"
+        severity     = "medium"
+        description  = "Opposite mode trick to invert safety"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 1
+        threshold    = 0
+        threat_class = "social_engineering"
     strings:
         $s1 = /opposite\s+day/i
         $s2 = /opposite\s+mode/i

@@ -56,12 +56,12 @@ impl Shield {
 
     /// Scan `input` and return findings at or above the configured severity.
     pub fn scan(&self, input: &str) -> ScanReport {
-        let all = self.engine.run(input, &self.disabled);
+        let (all, scores) = self.engine.run_scored(input, &self.disabled);
         let filtered: Vec<Finding> = all
             .into_iter()
             .filter(|f| f.severity >= self.min_severity)
             .collect();
-        ScanReport::from_findings(filtered)
+        ScanReport::from_scored(filtered, scores)
     }
 }
 

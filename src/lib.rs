@@ -29,8 +29,10 @@ pub mod report;
 pub mod rules;
 pub mod scanner;
 pub mod scanners;
+pub mod scoring;
 pub mod shield;
 
 pub use engines::Engine;
 pub use scanner::{Category, Finding, ScanReport, Severity};
+pub use scoring::ThreatScoreboard;
 pub use shield::{Shield, ShieldBuilder, ShieldError};

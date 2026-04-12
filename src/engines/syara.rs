@@ -14,12 +14,14 @@
 use syara_x::CompiledRules;
 
 use super::Engine;
-use crate::config::Config;
+use crate::config::{Config, ScoringConfig};
 use crate::rules::discover;
 use crate::scanner::{Category, Finding, Severity};
+use crate::scoring::{apply_threshold_filter, ScoredCandidate, ThreatMeta, ThreatScoreboard};
 
 pub struct SyaraEngine {
     rules: CompiledRules,
+    scoring: ScoringConfig,
 }
 
 impl SyaraEngine {
@@ -27,10 +29,11 @@ impl SyaraEngine {
     /// `CompiledRules`. Returns `Err` with a human-readable message when any
     /// source fails to parse — misconfigured rules are fatal.
     pub fn new(config: &Config) -> Result<Self, String> {
+        let scoring = config.scoring.clone().unwrap_or_default();
         let sources = discover("syara", config);
         if sources.is_empty() {
             return syara_x::compile_str("")
-                .map(|rules| Self { rules })
+                .map(|rules| Self { rules, scoring })
                 .map_err(|e| format!("SYARA rule compilation error (empty source): {e}"));
         }
         // `syara-x` compiles a single source blob; concatenate with blank
@@ -38,7 +41,7 @@ impl SyaraEngine {
         let combined = sources.join("\n\n");
         let rules = syara_x::compile_str(&combined)
             .map_err(|e| format!("SYARA rule compilation error: {e}"))?;
-        Ok(Self { rules })
+        Ok(Self { rules, scoring })
     }
 }
 
@@ -52,10 +55,14 @@ impl Engine for SyaraEngine {
     }
 
     fn run(&self, input: &str, disabled: &[String]) -> Vec<Finding> {
+        self.run_scored(input, disabled).0
+    }
+
+    fn run_scored(&self, input: &str, disabled: &[String]) -> (Vec<Finding>, ThreatScoreboard) {
         let matches = self.rules.scan(input);
         let disabled_lower: Vec<String> = disabled.iter().map(|s| s.to_lowercase()).collect();
 
-        let mut findings = Vec::new();
+        let mut candidates = Vec::new();
         for m in matches {
             if !m.matched {
                 continue;
@@ -67,7 +74,7 @@ impl Engine for SyaraEngine {
                 continue;
             }
 
-            let (category, severity, description) = match extract_meta(&m) {
+            let (category, severity, description, threat_meta) = match extract_meta(&m) {
                 Some(meta) => meta,
                 None => {
                     tracing::warn!(
@@ -89,31 +96,38 @@ impl Engine for SyaraEngine {
                     } else {
                         (detail.start_pos as usize, detail.end_pos as usize)
                     };
-                    findings.push(Finding {
-                        category,
-                        severity,
-                        description: description.clone(),
-                        matched_text: detail.matched_text.clone(),
-                        byte_range: (start, end),
+                    candidates.push(ScoredCandidate {
+                        finding: Finding {
+                            category,
+                            severity,
+                            description: description.clone(),
+                            matched_text: detail.matched_text.clone(),
+                            byte_range: (start, end),
+                        },
+                        meta: threat_meta.clone(),
                     });
                 }
             }
 
             if !emitted {
-                findings.push(Finding {
-                    category,
-                    severity,
-                    description: description.clone(),
-                    matched_text: String::new(),
-                    byte_range: (0, 0),
+                candidates.push(ScoredCandidate {
+                    finding: Finding {
+                        category,
+                        severity,
+                        description: description.clone(),
+                        matched_text: String::new(),
+                        byte_range: (0, 0),
+                    },
+                    meta: threat_meta.clone(),
                 });
             }
         }
-        findings
+
+        apply_threshold_filter(candidates, ThreatScoreboard::from_config(&self.scoring))
     }
 }
 
-fn extract_meta(m: &syara_x::Match) -> Option<(Category, Severity, String)> {
+fn extract_meta(m: &syara_x::Match) -> Option<(Category, Severity, String, ThreatMeta)> {
     let category = m
         .meta
         .get("category")
@@ -127,7 +141,25 @@ fn extract_meta(m: &syara_x::Match) -> Option<(Category, Severity, String)> {
         .get("description")
         .cloned()
         .unwrap_or_else(|| m.rule_name.clone());
-    Some((category, severity, description))
+    let cat_name = category.to_string();
+    let meta = ThreatMeta {
+        threat_level: m
+            .meta
+            .get("threat_level")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1),
+        threshold: m
+            .meta
+            .get("threshold")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0),
+        threat_class: m
+            .meta
+            .get("threat_class")
+            .cloned()
+            .unwrap_or(cat_name),
+    };
+    Some((category, severity, description, meta))
 }
 
 #[cfg(test)]
@@ -137,6 +169,7 @@ mod tests {
     fn engine_from_source(src: &str) -> SyaraEngine {
         SyaraEngine {
             rules: syara_x::compile_str(src).expect("inline rule compiles"),
+            scoring: ScoringConfig::default(),
         }
     }
 
@@ -239,8 +272,8 @@ mod tests {
             matched_patterns: patterns,
         };
 
-        // Walk the mapping logic directly against a single Match.
-        let (category, severity, description) = extract_meta(&m).expect("meta present");
+        let (category, severity, description, _threat_meta) =
+            extract_meta(&m).expect("meta present");
         let mut findings: Vec<Finding> = Vec::new();
         for details in m.matched_patterns.values() {
             for d in details {

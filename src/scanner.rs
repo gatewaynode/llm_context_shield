@@ -3,6 +3,8 @@ use std::ops::Range;
 
 use serde::Serialize;
 
+use crate::scoring::ThreatScoreboard;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -107,11 +109,25 @@ impl Finding {
 #[derive(Debug)]
 pub struct ScanReport {
     pub findings: Vec<Finding>,
+    /// Threat scores accumulated during scanning. `None` when the engine does
+    /// not implement scoring (e.g. custom engines via the default `run_scored`).
+    pub scores: Option<ThreatScoreboard>,
 }
 
 impl ScanReport {
     pub fn from_findings(findings: Vec<Finding>) -> Self {
-        Self { findings }
+        Self {
+            findings,
+            scores: None,
+        }
+    }
+
+    /// Construct a report with both findings and the scoring state.
+    pub fn from_scored(findings: Vec<Finding>, scores: ThreatScoreboard) -> Self {
+        Self {
+            findings,
+            scores: if scores.is_empty() { None } else { Some(scores) },
+        }
     }
 
     /// Returns `true` when no findings are present.

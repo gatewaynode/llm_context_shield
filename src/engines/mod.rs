@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::scanner::Finding;
+use crate::scoring::ThreatScoreboard;
 
 pub mod simple;
 
@@ -35,6 +36,14 @@ pub trait Engine: Send + Sync {
     fn rule_names(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Run scan and return both findings and threat scores.
+    ///
+    /// The default calls [`run`](Engine::run) and returns an empty scoreboard.
+    /// Built-in engines override this to perform threshold-gated scoring.
+    fn run_scored(&self, input: &str, disabled: &[String]) -> (Vec<Finding>, ThreatScoreboard) {
+        (self.run(input, disabled), ThreatScoreboard::new())
+    }
 }
 
 /// Build a boxed engine from its name string.
@@ -44,7 +53,7 @@ pub trait Engine: Send + Sync {
 /// by engines that need it (rule discovery, Ollama URLs); `simple` ignores it.
 pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<Box<dyn Engine>, String> {
     match name {
-        "simple" => Ok(Box::new(SimpleEngine)),
+        "simple" => Ok(Box::new(SimpleEngine::new(config))),
 
         #[cfg(feature = "yara")]
         "yara" => YaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>),

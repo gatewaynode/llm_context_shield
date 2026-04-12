@@ -2,19 +2,21 @@
 //!
 //! Compiles bundled `.yar` rule files plus any rules discovered in the
 //! configured rules directory into a single `yara_x::Rules` object, then
-//! scans input bytes on each call to [`run`]. Each pattern match becomes one
-//! [`Finding`]; rules missing `category` or `severity` metadata are skipped
-//! with a warning.
+//! scans input bytes on each call to [`run`]. Results are processed through
+//! the threshold-gated scoring system: threshold-0 rules always fire, higher
+//! thresholds activate only when accumulated class scores are sufficient.
 
 use yara_x::{Compiler, MetaValue, Rules};
 
 use super::Engine;
-use crate::config::Config;
+use crate::config::{Config, ScoringConfig};
 use crate::rules::discover;
 use crate::scanner::{Category, Finding, Severity};
+use crate::scoring::{apply_threshold_filter, ScoredCandidate, ThreatMeta, ThreatScoreboard};
 
 pub struct YaraEngine {
     rules: Rules,
+    scoring: ScoringConfig,
 }
 
 impl YaraEngine {
@@ -32,6 +34,7 @@ impl YaraEngine {
         }
         Ok(Self {
             rules: compiler.build(),
+            scoring: config.scoring.clone().unwrap_or_default(),
         })
     }
 }
@@ -49,26 +52,30 @@ impl Engine for YaraEngine {
     }
 
     fn run(&self, input: &str, disabled: &[String]) -> Vec<Finding> {
+        self.run_scored(input, disabled).0
+    }
+
+    fn run_scored(&self, input: &str, disabled: &[String]) -> (Vec<Finding>, ThreatScoreboard) {
         let mut scanner = yara_x::Scanner::new(&self.rules);
         let results = match scanner.scan(input.as_bytes()) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(error = %e, "YARA scan error");
                 eprintln!("Error: YARA scan failed: {e}");
-                return Vec::new();
+                return (Vec::new(), ThreatScoreboard::new());
             }
         };
 
         let disabled_lower: Vec<String> = disabled.iter().map(|s| s.to_lowercase()).collect();
 
-        let mut findings = Vec::new();
+        let mut candidates = Vec::new();
         for rule in results.matching_rules() {
             let ident = rule.identifier();
             if disabled_lower.iter().any(|d| d == &ident.to_lowercase()) {
                 continue;
             }
 
-            let (category, severity, description) = match extract_meta(&rule) {
+            let (category, severity, description, threat_meta) = match extract_meta(&rule) {
                 Some(m) => m,
                 None => {
                     tracing::warn!(
@@ -85,12 +92,15 @@ impl Engine for YaraEngine {
                     any_pattern = true;
                     let range = m.range();
                     let matched_text = String::from_utf8_lossy(m.data()).into_owned();
-                    findings.push(Finding {
-                        category,
-                        severity,
-                        description: description.clone(),
-                        matched_text,
-                        byte_range: (range.start, range.end),
+                    candidates.push(ScoredCandidate {
+                        finding: Finding {
+                            category,
+                            severity,
+                            description: description.clone(),
+                            matched_text,
+                            byte_range: (range.start, range.end),
+                        },
+                        meta: threat_meta.clone(),
                     });
                 }
             }
@@ -98,39 +108,78 @@ impl Engine for YaraEngine {
             // Condition-only match (no string patterns) → emit a single finding
             // with an empty matched_text so the rule is still reported.
             if !any_pattern {
-                findings.push(Finding {
-                    category,
-                    severity,
-                    description: description.clone(),
-                    matched_text: String::new(),
-                    byte_range: (0, 0),
+                candidates.push(ScoredCandidate {
+                    finding: Finding {
+                        category,
+                        severity,
+                        description: description.clone(),
+                        matched_text: String::new(),
+                        byte_range: (0, 0),
+                    },
+                    meta: threat_meta.clone(),
                 });
             }
         }
 
-        findings
+        apply_threshold_filter(candidates, ThreatScoreboard::from_config(&self.scoring))
     }
 }
 
-fn extract_meta(rule: &yara_x::Rule) -> Option<(Category, Severity, String)> {
+fn extract_meta(rule: &yara_x::Rule) -> Option<(Category, Severity, String, ThreatMeta)> {
     let mut category: Option<Category> = None;
     let mut severity: Option<Severity> = None;
     let mut description: Option<String> = None;
+    let mut threat_level: Option<i32> = None;
+    let mut threshold: Option<i32> = None;
+    let mut threat_class: Option<String> = None;
 
     for (key, value) in rule.metadata() {
-        let MetaValue::String(s) = value else {
-            continue;
-        };
         match key {
-            "category" => category = Category::from_str_loose(s),
-            "severity" => severity = Severity::from_str_loose(s),
-            "description" => description = Some(s.to_string()),
+            "category" => {
+                if let MetaValue::String(s) = value {
+                    category = Category::from_str_loose(s);
+                }
+            }
+            "severity" => {
+                if let MetaValue::String(s) = value {
+                    severity = Severity::from_str_loose(s);
+                }
+            }
+            "description" => {
+                if let MetaValue::String(s) = value {
+                    description = Some(s.to_string());
+                }
+            }
+            "threat_level" => {
+                if let MetaValue::Integer(n) = value {
+                    threat_level = Some(n as i32);
+                }
+            }
+            "threshold" => {
+                if let MetaValue::Integer(n) = value {
+                    threshold = Some(n as i32);
+                }
+            }
+            "threat_class" => {
+                if let MetaValue::String(s) = value {
+                    threat_class = Some(s.to_string());
+                }
+            }
             _ => {}
         }
     }
 
-    let description = description.unwrap_or_else(|| rule.identifier().to_string());
-    Some((category?, severity?, description))
+    let cat = category?;
+    let sev = severity?;
+    let desc = description.unwrap_or_else(|| rule.identifier().to_string());
+    let cat_name = cat.to_string();
+    let meta = ThreatMeta {
+        threat_level: threat_level.unwrap_or(1),
+        threshold: threshold.unwrap_or(0),
+        threat_class: threat_class.unwrap_or(cat_name),
+    };
+
+    Some((cat, sev, desc, meta))
 }
 
 #[cfg(test)]
@@ -142,6 +191,7 @@ mod tests {
         compiler.add_source(src).expect("inline rule compiles");
         YaraEngine {
             rules: compiler.build(),
+            scoring: ScoringConfig::default(),
         }
     }
 
@@ -235,5 +285,95 @@ mod tests {
         let engine = engine_from_source(src);
         let findings = engine.run("badword and another BadWord", &[]);
         assert_eq!(findings.len(), 2);
+    }
+
+    #[test]
+    fn extract_meta_parses_threat_fields() {
+        let src = r#"
+            rule scored {
+                meta:
+                    category     = "prompt_injection"
+                    severity     = "critical"
+                    description  = "scored rule"
+                    threat_level = 5
+                    threshold    = 3
+                    threat_class = "prompt_hijack"
+                strings:
+                    $s1 = "test"
+                condition:
+                    any of them
+            }
+        "#;
+        let mut compiler = Compiler::new();
+        compiler.add_source(src).expect("compiles");
+        let rules = compiler.build();
+        let rule = rules.iter().next().expect("one rule");
+        let (cat, sev, desc, meta) = extract_meta(&rule).expect("meta present");
+        assert_eq!(cat, Category::PromptInjection);
+        assert_eq!(sev, Severity::Critical);
+        assert_eq!(desc, "scored rule");
+        assert_eq!(meta.threat_level, 5);
+        assert_eq!(meta.threshold, 3);
+        assert_eq!(meta.threat_class, "prompt_hijack");
+    }
+
+    #[test]
+    fn extract_meta_defaults_threat_fields() {
+        let src = r#"
+            rule minimal {
+                meta:
+                    category = "jailbreak"
+                    severity = "high"
+                strings:
+                    $s1 = "test"
+                condition:
+                    any of them
+            }
+        "#;
+        let mut compiler = Compiler::new();
+        compiler.add_source(src).expect("compiles");
+        let rules = compiler.build();
+        let rule = rules.iter().next().expect("one rule");
+        let (_cat, _sev, _desc, meta) = extract_meta(&rule).expect("meta present");
+        assert_eq!(meta.threat_level, 1);
+        assert_eq!(meta.threshold, 0);
+        assert_eq!(meta.threat_class, "jailbreak");
+    }
+
+    #[test]
+    fn threshold_gating_works() {
+        let src = r#"
+            rule low_threshold {
+                meta:
+                    category     = "prompt_injection"
+                    severity     = "high"
+                    threat_level = 3
+                    threshold    = 0
+                    threat_class = "test_class"
+                strings:
+                    $s1 = "hello"
+                condition:
+                    any of them
+            }
+            rule high_threshold {
+                meta:
+                    category     = "prompt_injection"
+                    severity     = "critical"
+                    threat_level = 1
+                    threshold    = 10
+                    threat_class = "test_class"
+                strings:
+                    $s1 = "hello"
+                condition:
+                    any of them
+            }
+        "#;
+        let engine = engine_from_source(src);
+        let (findings, sb) = engine.run_scored("hello world", &[]);
+        // Only the threshold-0 rule fires; threshold-10 requires 10 accumulated
+        // but only 3 is accumulated from the first rule
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::High);
+        assert_eq!(sb.class_score("test_class"), 3);
     }
 }

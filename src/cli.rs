@@ -47,6 +47,10 @@ pub enum Command {
         /// Write passthrough content to FILE instead of stdout (requires --safe-only-passthrough)
         #[arg(short = 'o', long, value_name = "FILE")]
         output: Option<PathBuf>,
+
+        /// Include threat scores in output (always included with -f json when scores are present)
+        #[arg(long)]
+        threat_scores: bool,
     },
 
     /// Scaffold config and/or rules directories under XDG paths.

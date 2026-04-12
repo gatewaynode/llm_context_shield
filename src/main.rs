@@ -47,6 +47,7 @@ fn main() {
             engine,
             safe_only_passthrough,
             output: output_file,
+            threat_scores,
         } => {
             // Merge: CLI arg > config > built-in default.
             let scan_cfg = config.scan.as_ref();
@@ -102,7 +103,7 @@ fn main() {
             };
 
             info!(engine = engine.name(), "engine active");
-            let findings = engine.run(&input, &disable);
+            let (findings, scores) = engine.run_scored(&input, &disable);
             info!(total = findings.len(), "scan complete");
 
             let filtered_count = findings
@@ -116,9 +117,9 @@ fn main() {
                 "output"
             );
 
-            let report = ScanReport::from_findings(findings);
+            let report = ScanReport::from_scored(findings, scores);
 
-            if let Err(e) = output(&report, &format, min_severity, safe_only_passthrough) {
+            if let Err(e) = output(&report, &format, min_severity, safe_only_passthrough, threat_scores) {
                 error!(error = %e, "failed to write output");
                 eprintln!("Error writing output: {e}");
                 process::exit(2);

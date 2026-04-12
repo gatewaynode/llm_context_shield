@@ -49,9 +49,13 @@ The `Engine` trait is the single extension point.
 pub trait Engine: Send + Sync {
     fn name(&self) -> &'static str;
     fn run(&self, input: &str, disabled: &[String]) -> Vec<Finding>;
+    fn rule_names(&self) -> Vec<String> { Vec::new() }
+    fn run_scored(&self, input: &str, disabled: &[String]) -> (Vec<Finding>, ThreatScoreboard) {
+        (self.run(input, disabled), ThreatScoreboard::new())
+    }
 }
 
-pub fn build(name: &str) -> Result<Box<dyn Engine>, String>;
+pub fn build(name: &str, config: &Config) -> Result<Box<dyn Engine>, String>;
 ```
 
 ```mermaid
@@ -604,7 +608,80 @@ SYARA tests requiring Ollama are gated behind `#[ignore]`.
 
 ---
 
-## 14. Design Decisions and Rationale
+## 14. Threat Scoring (Phase 7)
+
+Phase 7 adds a multi-pass, threshold-gated scoring system on top of the existing
+single-pass scan. Rules declare `threat_level`, `threshold`, and `threat_class`
+metadata to control when they activate and how much they contribute to cumulative
+threat scores.
+
+### Post-Filter Architecture
+
+```mermaid
+flowchart TB
+    subgraph "Engine (single YARA/SYARA/Simple pass)"
+        SCAN["Scan all rules in one pass"]
+        WRAP["Wrap each match as ScoredCandidate<br/>(Finding + ThreatMeta)"]
+    end
+
+    subgraph "apply_threshold_filter()"
+        SORT["Stable-sort candidates by threshold"]
+        WALK["Walk in threshold order"]
+        GATE{"scoreboard.should_run<br/>(threshold, class)?"}
+        RECORD["scoreboard.record(class, level)"]
+        EMIT["Emit finding"]
+        DROP["Drop (silently)"]
+    end
+
+    SCAN --> WRAP
+    WRAP --> SORT
+    SORT --> WALK
+    WALK --> GATE
+    GATE -->|yes| RECORD
+    RECORD --> EMIT
+    GATE -->|no| DROP
+```
+
+**Key decision**: All rules compile and scan in a single pass. YARA-X compiles
+all rules into a single monolithic `Rules` object — splitting by threshold tier
+would require multiple `Compiler`/`Rules` instances (more memory, more complexity)
+for negligible gain since YARA scanning is already fast. The post-filter approach
+(`apply_threshold_filter` in `src/scoring.rs`) processes results in threshold
+order after the scan completes. This is consistent across all three engines.
+
+### Scoring Types
+
+```
+ThreatMeta { threat_level: i32, threshold: i32, threat_class: String }
+ThreatScoreboard { class_scores: HashMap<String, i32>, cumulative: i32, ... }
+ScoredCandidate { finding: Finding, meta: ThreatMeta }  // internal only
+```
+
+`ScoredCandidate` is `pub(crate)` — it pairs a `Finding` with its `ThreatMeta`
+during scoring, then is stripped back to plain `Finding` before returning.
+Scores surface via `ScanReport.scores: Option<ThreatScoreboard>`, not on
+individual findings.
+
+### Engine Trait Extension
+
+```rust
+fn run_scored(&self, input: &str, disabled: &[String]) -> (Vec<Finding>, ThreatScoreboard) {
+    (self.run(input, disabled), ThreatScoreboard::new())  // default impl
+}
+```
+
+The default implementation preserves backward compatibility for custom engines.
+Built-in engines override `run_scored()` and have `run()` delegate to it.
+
+### Cross-Branch Escalation
+
+When any class score exceeds `escalation_threshold`, `effective_threshold()`
+reduces thresholds for rules in *other* classes by `escalation_reduction`.
+Default config: threshold=100, reduction=0 (inert until tuned with real data).
+
+---
+
+## 15. Design Decisions and Rationale
 
 ### Why compile rules at engine construction, not per-scan?
 
@@ -660,7 +737,8 @@ src/
   input.rs             ← stdin/file reading, normalization
   scanner.rs           ← Finding, Category, Severity types (+ from_str_loose)
   report.rs            ← output formatting (json, text, quiet)
-  rules.rs             ← NEW: rule file discovery and loading
+  scoring.rs           ← threat scoring engine (ThreatMeta, ThreatScoreboard)
+  rules.rs             ← rule file discovery and loading
   logging.rs           ← tracing setup
   engines/
     mod.rs             ← Engine trait, build() dispatch

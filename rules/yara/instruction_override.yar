@@ -1,10 +1,13 @@
 rule instruction_override_critical {
     meta:
-        category    = "instruction_override"
-        severity    = "critical"
-        description = "Fake system token, updated-instructions header, or admin-mode tag"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "instruction_override"
+        severity     = "critical"
+        description  = "Fake system token, updated-instructions header, or admin-mode tag"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 5
+        threshold    = 0
+        threat_class = "prompt_hijack"
     strings:
         $s1 = /<\|?system\|?>\s*.+/i
         $s2 = /\b(NEW|UPDATED|REVISED)\s+(SYSTEM\s+)?(INSTRUCTIONS?|RULES?|PROMPT)\s*:/
@@ -15,11 +18,14 @@ rule instruction_override_critical {
 
 rule instruction_override_high {
     meta:
-        category    = "instruction_override"
-        severity    = "high"
-        description = "Fake system prefix, markdown header, or developer-mode activation"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "instruction_override"
+        severity     = "high"
+        description  = "Fake system prefix, markdown header, or developer-mode activation"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 3
+        threshold    = 0
+        threat_class = "prompt_hijack"
     strings:
         $s1 = /\[?SYSTEM\]?\s*:\s*.+/
         $s2 = /###\s*SYSTEM\s*(MESSAGE|PROMPT|INSTRUCTION)/i
@@ -30,11 +36,14 @@ rule instruction_override_high {
 
 rule instruction_override_medium {
     meta:
-        category    = "instruction_override"
-        severity    = "medium"
-        description = "Authority keyword directive or parameter injection attempt"
-        author      = "llm_context_shield"
-        version     = "1"
+        category     = "instruction_override"
+        severity     = "medium"
+        description  = "Authority keyword directive or parameter injection attempt"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 1
+        threshold    = 0
+        threat_class = "prompt_hijack"
     strings:
         $s1 = /\b(IMPORTANT|CRITICAL|URGENT|WARNING)\s*:\s*(you\s+must|always|never|do\s+not|override)\b/
         $s2 = /assistant\s*=\s*\{/i

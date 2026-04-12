@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -18,6 +19,8 @@ pub struct Config {
     pub rules: Option<RulesConfig>,
     /// SYARA engine semantic matcher configuration.
     pub syara: Option<SyaraConfig>,
+    /// Threat scoring configuration.
+    pub scoring: Option<ScoringConfig>,
 }
 
 /// Rule-file discovery configuration.
@@ -35,6 +38,20 @@ pub struct SyaraConfig {
     pub ollama_url: Option<String>,
     pub embed_model: Option<String>,
     pub llm_model: Option<String>,
+}
+
+/// Threat scoring configuration.
+#[derive(Deserialize, Default, Clone)]
+pub struct ScoringConfig {
+    /// Minimum class score that triggers cross-branch escalation.
+    /// Default: 100 (effectively inert until tuned).
+    pub escalation_threshold: Option<i32>,
+    /// Amount to reduce other classes' thresholds when escalation fires.
+    /// Default: 0 (no reduction until tuned).
+    pub escalation_reduction: Option<i32>,
+    /// Per-class weight factors controlling contribution to the cumulative
+    /// score. Classes not listed default to 1.0.
+    pub class_weights: Option<HashMap<String, f32>>,
 }
 
 /// Configuration defaults for the `scan` subcommand.
@@ -141,4 +158,19 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 
 # Model name for LLM evaluator.
 # llm_model = "llama3.2"
+
+[scoring]
+# Cross-branch escalation: when any threat class accumulates this score,
+# thresholds for other classes are reduced by escalation_reduction.
+# Default: 100 (inert until tuned with real-world data)
+# escalation_threshold = 100
+
+# Amount to reduce other classes' thresholds when escalation fires.
+# Default: 0 (no reduction until tuned)
+# escalation_reduction = 0
+
+# Per-class weight factors (float). Controls how much a class contributes
+# to the global cumulative score. Unlisted classes default to 1.0.
+# [scoring.class_weights]
+# obfuscation = 0.5
 "#;
