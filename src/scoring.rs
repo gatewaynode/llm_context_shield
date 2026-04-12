@@ -6,6 +6,7 @@
 //! match. `apply_threshold_filter` processes candidates in threshold order,
 //! emitting only those whose class has accumulated enough suspicion.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use serde::Serialize;
@@ -46,7 +47,7 @@ impl ThreatMeta {
 /// Internal configuration (weights, escalation) is excluded from output.
 #[derive(Debug, Clone, Serialize)]
 pub struct ThreatScoreboard {
-    class_scores: HashMap<String, i32>,
+    class_scores: BTreeMap<String, i32>,
     cumulative: i32,
     #[serde(skip)]
     class_weights: HashMap<String, f32>,
@@ -60,7 +61,7 @@ impl ThreatScoreboard {
     /// Create a scoreboard with default settings (escalation inert).
     pub fn new() -> Self {
         Self {
-            class_scores: HashMap::new(),
+            class_scores: BTreeMap::new(),
             cumulative: 0,
             class_weights: HashMap::new(),
             escalation_threshold: 100,
@@ -71,7 +72,7 @@ impl ThreatScoreboard {
     /// Create a scoreboard from user configuration.
     pub fn from_config(config: &ScoringConfig) -> Self {
         Self {
-            class_scores: HashMap::new(),
+            class_scores: BTreeMap::new(),
             cumulative: 0,
             class_weights: config.class_weights.clone().unwrap_or_default(),
             escalation_threshold: config.escalation_threshold.unwrap_or(100),
@@ -81,9 +82,11 @@ impl ThreatScoreboard {
 
     /// Record a match: update the class accumulator and the weighted global.
     pub fn record(&mut self, threat_class: &str, threat_level: i32) {
-        *self.class_scores.entry(threat_class.to_string()).or_insert(0) += threat_level;
+        let entry = self.class_scores.entry(threat_class.to_string()).or_insert(0);
+        *entry = entry.saturating_add(threat_level);
         let weight = self.class_weights.get(threat_class).copied().unwrap_or(1.0);
-        self.cumulative += (threat_level as f32 * weight).round() as i32;
+        let weighted = (threat_level as f32 * weight).round() as i32;
+        self.cumulative = self.cumulative.saturating_add(weighted);
     }
 
     /// Current score for one threat class.
@@ -311,5 +314,14 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].description, "low-t");
         assert_eq!(sb.class_score("a"), 2);
+    }
+
+    #[test]
+    fn record_saturates_instead_of_overflowing() {
+        let mut sb = ThreatScoreboard::new();
+        sb.record("a", i32::MAX);
+        sb.record("a", 1);
+        assert_eq!(sb.class_score("a"), i32::MAX);
+        assert_eq!(sb.cumulative_score(), i32::MAX);
     }
 }

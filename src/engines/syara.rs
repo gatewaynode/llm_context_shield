@@ -89,13 +89,8 @@ impl Engine for SyaraEngine {
             for details in m.matched_patterns.values() {
                 for detail in details {
                     emitted = true;
-                    // `MatchDetail` uses `-1` sentinels when the pattern does
-                    // not track byte positions (e.g. semantic matchers).
-                    let (start, end) = if detail.start_pos < 0 || detail.end_pos < 0 {
-                        (0usize, 0usize)
-                    } else {
-                        (detail.start_pos as usize, detail.end_pos as usize)
-                    };
+                    let start = detail.start_pos.unwrap_or(0);
+                    let end = detail.end_pos.unwrap_or(0);
                     candidates.push(ScoredCandidate {
                         finding: Finding {
                             category,
@@ -142,17 +137,37 @@ fn extract_meta(m: &syara_x::Match) -> Option<(Category, Severity, String, Threa
         .cloned()
         .unwrap_or_else(|| m.rule_name.clone());
     let cat_name = category.to_string();
+    let threat_level = match m.meta.get("threat_level") {
+        Some(s) => match s.parse::<i32>() {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!(
+                    rule = %m.rule_name,
+                    value = %s,
+                    "invalid threat_level in SYARA rule, defaulting to 1"
+                );
+                1
+            }
+        },
+        None => 1,
+    };
+    let threshold = match m.meta.get("threshold") {
+        Some(s) => match s.parse::<i32>() {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!(
+                    rule = %m.rule_name,
+                    value = %s,
+                    "invalid threshold in SYARA rule, defaulting to 0"
+                );
+                0
+            }
+        },
+        None => 0,
+    };
     let meta = ThreatMeta {
-        threat_level: m
-            .meta
-            .get("threat_level")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1),
-        threshold: m
-            .meta
-            .get("threshold")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0),
+        threat_level,
+        threshold,
         threat_class: m
             .meta
             .get("threat_class")
@@ -247,15 +262,17 @@ mod tests {
     }
 
     #[test]
-    fn sentinel_positions_map_to_zero() {
-        // Hand-build a Match with -1 sentinels to exercise the coercion
+    fn none_positions_map_to_zero() {
+        // Hand-build a Match with None positions to exercise the fallback
         // path without needing a semantic matcher.
         use std::collections::HashMap;
         use syara_x::{Match, MatchDetail};
 
-        let mut detail = MatchDetail::new("$s1", "sentinel_text");
-        detail.start_pos = -1;
-        detail.end_pos = -1;
+        let detail = MatchDetail::new("$s1", "sentinel_text");
+        // start_pos and end_pos default to None
+        assert!(detail.start_pos.is_none());
+        assert!(detail.end_pos.is_none());
+
         let mut patterns: HashMap<String, Vec<MatchDetail>> = HashMap::new();
         patterns.insert("$s1".to_string(), vec![detail]);
 
@@ -277,11 +294,8 @@ mod tests {
         let mut findings: Vec<Finding> = Vec::new();
         for details in m.matched_patterns.values() {
             for d in details {
-                let (start, end) = if d.start_pos < 0 || d.end_pos < 0 {
-                    (0usize, 0usize)
-                } else {
-                    (d.start_pos as usize, d.end_pos as usize)
-                };
+                let start = d.start_pos.unwrap_or(0);
+                let end = d.end_pos.unwrap_or(0);
                 findings.push(Finding {
                     category,
                     severity,

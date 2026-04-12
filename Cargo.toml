@@ -24,15 +24,17 @@ tracing-subscriber = { version = "0.3", features = ["fmt"], optional = true }
 tracing-appender = { version = "0.2", optional = true }
 toml = "0.8"
 yara-x = { version = "1.14", optional = true }
+syara-x = { version = "0.1", optional = true }
 
 [features]
 default = ["cli"]
 cli = ["dep:clap", "dep:tracing-subscriber", "dep:tracing-appender"]
 yara = ["dep:yara-x"]
+syara = ["dep:syara-x"]
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
-check-cfg = ['cfg(feature, values("syara"))']
+check-cfg = ['cfg(feature, values("syara-sbert", "syara-classifier", "syara-llm"))']
 
 [dev-dependencies]
 assert_cmd = "2"

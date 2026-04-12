@@ -54,6 +54,48 @@ pub struct ScoringConfig {
     pub class_weights: Option<HashMap<String, f32>>,
 }
 
+impl ScoringConfig {
+    /// Validate scoring configuration values. Returns a list of warnings for
+    /// invalid values that were clamped to safe defaults.
+    pub fn validate(&mut self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        if let Some(t) = self.escalation_threshold
+            && t < 0
+        {
+            warnings.push(format!(
+                "scoring.escalation_threshold is negative ({t}), clamping to 0"
+            ));
+            self.escalation_threshold = Some(0);
+        }
+        if let Some(r) = self.escalation_reduction
+            && r < 0
+        {
+            warnings.push(format!(
+                "scoring.escalation_reduction is negative ({r}), clamping to 0"
+            ));
+            self.escalation_reduction = Some(0);
+        }
+        if let Some(ref mut weights) = self.class_weights {
+            weights.retain(|class, weight| {
+                if weight.is_nan() || weight.is_infinite() {
+                    warnings.push(format!(
+                        "scoring.class_weights.{class} is {weight}, removing"
+                    ));
+                    return false;
+                }
+                if *weight < 0.0 {
+                    warnings.push(format!(
+                        "scoring.class_weights.{class} is negative ({weight}), clamping to 0.0"
+                    ));
+                    *weight = 0.0;
+                }
+                true
+            });
+        }
+        warnings
+    }
+}
+
 /// Configuration defaults for the `scan` subcommand.
 #[derive(Deserialize, Default)]
 pub struct ScanConfig {
@@ -79,8 +121,14 @@ impl Config {
         }
         let text = fs::read_to_string(&path)
             .map_err(|e| io::Error::other(format!("cannot read config {}: {e}", path.display())))?;
-        toml::from_str(&text)
-            .map_err(|e| io::Error::other(format!("invalid config {}: {e}", path.display())))
+        let mut config: Self = toml::from_str(&text)
+            .map_err(|e| io::Error::other(format!("invalid config {}: {e}", path.display())))?;
+        if let Some(ref mut scoring) = config.scoring {
+            for warning in scoring.validate() {
+                eprintln!("Warning: {warning}");
+            }
+        }
+        Ok(config)
     }
 
     #[doc(hidden)]

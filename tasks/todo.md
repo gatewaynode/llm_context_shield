@@ -5,6 +5,17 @@ See `tasks/ARCHITECTURE.md` for full design and diagrams.
 
 ---
 
+## Migrate ThreatScoreboard from HashMap to BTreeMap
+
+`ThreatScoreboard::class_scores` currently uses `HashMap<String, i32>`, which has non-deterministic iteration order. This causes text and JSON output of class scores to vary between runs. Replace with `BTreeMap` for deterministic, alphabetically-sorted output. The API surface is identical — this is a type swap in `src/scoring.rs` plus the `use` import.
+
+- [x] Replace `HashMap<String, i32>` with `BTreeMap<String, i32>` in `ThreatScoreboard`
+- [x] Update `use` imports in `src/scoring.rs`
+- [x] Verify all existing tests pass
+- [x] Remove BUGS.md entry #1 (HashMap non-determinism)
+
+---
+
 ## Phase 1: Foundation (no new dependencies)
 
 - [x] Add `Category::from_str_loose()` to `src/scanner.rs`
@@ -94,7 +105,7 @@ Extend `Makefile.toml` (currently: macOS arm64, Linux x86-64 musl, Linux aarch64
 - [x] Add `examples/` directory: `examples/embed.rs` (library usage) and `examples/custom_engine.rs` (custom `Engine` trait impl)
 - [ ] ~~Commit to a semver policy~~ — deferred until crates.io publish
 - [x] Verified `RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --no-deps` passes clean
-- [x] Switched `yara-x` from local path to crates.io (`version = "1.14"`); removed `syara-x` path dependency (deferred until crate published)
+- [x] Switched `yara-x` from local path to crates.io (`version = "1.14"`); `syara-x` now on crates.io (`version = "0.1"`)
 - [x] Add a `README.md` "Library usage" section with `Shield::builder()` snippet
 
 ## Phase 7: Heuristic threat scoring
@@ -154,3 +165,14 @@ Restructure the YARA/SYARA engine `run()` to execute rules in threshold-ordered 
 - Kill chain ordering: explicit `order` / `priority` metadata for sequencing rules within a threshold tier; only if real-world attack chains demand it
 - Per-class cumulative weight tuning from real-world false-positive data — the `class_weights` config hook is ready but values are all 1.0 until we have data
 - Adaptive thresholds: adjust escalation behavior based on input length, source trust level, or prior scan history
+
+---
+
+## Housekeeping: test coverage gaps
+
+Test coverage gaps identified during Phase 7 review (2026-04-12). Not bugs — the code is correct, but these paths lack direct test verification.
+
+- [ ] Add SYARA threat field parsing tests — mirror `extract_meta_parses_threat_fields` and `extract_meta_defaults_threat_fields` from `src/engines/yara.rs` into `src/engines/syara.rs` for the string-based parsing path
+- [ ] Add `SimpleEngine::run_scored()` unit test — call `run_scored()` on known-bad input, assert `ThreatScoreboard` has non-zero class scores and cumulative
+- [ ] Add integration test with adversarial scoring config — extreme weights, NaN, negative values; verify validation clamps correctly
+- [ ] Add input size limit test — verify `read_input` rejects files and stdin exceeding 100 MiB cap
