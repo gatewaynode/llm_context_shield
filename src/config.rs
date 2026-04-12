@@ -66,12 +66,12 @@ impl Config {
             .map_err(|e| io::Error::other(format!("invalid config {}: {e}", path.display())))
     }
 
-    /// Return `true` if the XDG config directory already exists.
+    #[doc(hidden)]
     pub fn config_dir_exists() -> bool {
         xdg_config_dir().exists()
     }
 
-    /// Create the XDG config directory and write a commented default config file.
+    #[doc(hidden)]
     pub fn init_default() -> io::Result<()> {
         let dir = xdg_config_dir();
         fs::create_dir_all(&dir).map_err(|e| {

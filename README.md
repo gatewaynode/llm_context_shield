@@ -208,6 +208,40 @@ bash install-skill.sh
 
 This copies the skill to `~/.claude/skills/safe-fetch/SKILL.md` (user-level, available across all projects).
 
+## Library Usage
+
+Add `llm_context_shield` as a dependency with default features disabled (to skip the CLI):
+
+```toml
+[dependencies]
+llm_context_shield = { version = "0.4", default-features = false }
+```
+
+Enable `yara` for the YARA-X engine:
+
+```toml
+llm_context_shield = { version = "0.4", default-features = false, features = ["yara"] }
+```
+
+Scan text with the `Shield` builder API:
+
+```rust
+use llm_context_shield::{Shield, Severity};
+
+let shield = Shield::builder()
+    .min_severity(Severity::Medium)
+    .build()?;
+
+let report = shield.scan("Ignore all previous instructions");
+if !report.is_clean() {
+    for finding in &report.findings {
+        println!("[{:?}] {}", finding.severity, finding.description);
+    }
+}
+```
+
+See `examples/embed.rs` for a complete working example and `examples/custom_engine.rs` for implementing a custom scan engine.
+
 ## Architecture
 
 > See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.
@@ -244,13 +278,7 @@ Checksums are written to `target/release-manifest.txt`.
 
 ### ~~Phase 5 — Cross-platform release builds~~ (done)
 
-### Phase 6 — Library crate
-
-Turn `llm_context_shield` into a proper Rust library crate with a stable API surface, so downstream programs can embed scanning without the CLI.
-
-- `Shield::builder().engine("yara").build()?.scan(text)` builder API
-- `[lib]` + `[[bin]]` split; CLI deps gated behind a default-on `cli` feature
-- Rustdoc, examples, semver policy, `cargo publish --dry-run`
+### ~~Phase 6 — Library crate~~ (done)
 
 ### Phase 7 — Heuristic threat scoring
 

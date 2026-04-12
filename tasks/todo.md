@@ -87,15 +87,15 @@ Extend `Makefile.toml` (currently: macOS arm64, Linux x86-64 musl, Linux aarch64
 
 `src/lib.rs` already re-exports every module (`cli`, `config`, `engines`, `input`, `logging`, `report`, `rules`, `scanner`, `scanners`), so the binary is a thin wrapper over the library — but the surface is ad-hoc and unversioned. This phase turns `llm_context_shield` into a proper crate that downstream Rust apps can depend on without pulling in `clap`, `tracing`, or the CLI wiring.
 
-- [ ] Audit the public API surface — identify what should stay `pub` (`Scanner`, `Finding`, `Category`, `Severity`, `Engine`, `ScanReport`), what should become `pub(crate)` (internal helpers, CLI glue), and what should move behind a `cli` feature flag
-- [ ] Add a top-level `Shield` (or `Scanner`) builder API — programmatic equivalent of the CLI: `Shield::builder().engine("yara").min_severity(Severity::High).disable([...]).build()?.scan(text)` — so callers don't have to construct `Config` by hand
-- [ ] Split `Cargo.toml` into `[lib]` + `[[bin]]`; gate CLI-only deps (`clap`) and the `src/cli.rs` / `src/main.rs` path behind a default-on `cli` feature so library consumers can `default-features = false`
-- [ ] Write rustdoc for every public item — module-level docs on `lib.rs`, doctest examples for `Shield::scan`, link to `docs/rule-authoring.md` from the `rules` module
-- [ ] Add an `examples/` directory with at least: `examples/embed.rs` (library usage from another Rust program) and `examples/custom_engine.rs` (implementing the `Engine` trait outside the crate)
-- [ ] Commit to a semver policy — document in `README.md` and `CONTRIBUTING.md` which items are stable, which are `#[doc(hidden)]` escape hatches, and the MSRV
-- [ ] Set up `cargo doc --no-deps --all-features` in CI and fail on broken intra-doc links (`RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links"`)
-- [ ] Publish dry-run: `cargo publish --dry-run` with all feature combinations; resolve any `path = "../syara-x/syara"` dependencies before a real publish (vendor, fork, or make syara a hard-optional `[dependencies]` entry with a `git` fallback)
-- [ ] Add a `README.md` "Library usage" section with a minimal embedding snippet and a link to `docs.rs/llm_context_shield`
+- [x] Audit the public API surface — CLI modules (`cli`, `logging`, `report`) gated behind `#[cfg(feature = "cli")]`; `Config::init_default()` and `Config::config_dir_exists()` marked `#[doc(hidden)]`
+- [x] Add a top-level `Shield` builder API — `Shield::builder().engine("yara").min_severity(Severity::High).disable([...]).build()?.scan(text)` with `custom_engine()` for user-defined engines
+- [x] Split `Cargo.toml` into `[lib]` + `[[bin]]`; gate `clap`, `tracing-subscriber`, `tracing-appender` behind default-on `cli` feature
+- [x] Write rustdoc — crate-level docs on `lib.rs` with doctest example for `Shield::scan`
+- [x] Add `examples/` directory: `examples/embed.rs` (library usage) and `examples/custom_engine.rs` (custom `Engine` trait impl)
+- [ ] ~~Commit to a semver policy~~ — deferred until crates.io publish
+- [x] Verified `RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --no-deps` passes clean
+- [x] Switched `yara-x` from local path to crates.io (`version = "1.14"`); removed `syara-x` path dependency (deferred until crate published)
+- [x] Add a `README.md` "Library usage" section with `Shield::builder()` snippet
 
 ## Phase 7: Heuristic threat scoring
 

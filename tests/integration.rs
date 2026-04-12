@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn cmd() -> Command {
-    Command::cargo_bin("llm_context_shield").unwrap()
+    Command::cargo_bin("lcs").unwrap()
 }
 
 // --- Clean input tests ---

@@ -113,6 +113,11 @@ impl ScanReport {
     pub fn from_findings(findings: Vec<Finding>) -> Self {
         Self { findings }
     }
+
+    /// Returns `true` when no findings are present.
+    pub fn is_clean(&self) -> bool {
+        self.findings.is_empty()
+    }
 }
 
 pub trait Scanner: Send + Sync {

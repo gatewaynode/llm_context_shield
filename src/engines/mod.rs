@@ -42,7 +42,7 @@ pub trait Engine: Send + Sync {
 /// Returns `Err` with a human-readable message for unrecognised names or
 /// engines whose Cargo feature is not compiled in. The `config` is consumed
 /// by engines that need it (rule discovery, Ollama URLs); `simple` ignores it.
-pub fn build(name: &str, config: &Config) -> Result<Box<dyn Engine>, String> {
+pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<Box<dyn Engine>, String> {
     match name {
         "simple" => Ok(Box::new(SimpleEngine)),
 
