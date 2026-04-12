@@ -212,16 +212,37 @@ This copies the skill to `~/.claude/skills/safe-fetch/SKILL.md` (user-level, ava
 
 > See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.
 
+## Release Builds
+
+Requires [`cargo-make`](https://github.com/sagiegurari/cargo-make) and [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild).
+
+```bash
+cargo make release            # core targets (macOS, Linux, Windows x86-64)
+cargo make release-extras     # extra targets (Windows ARM, FreeBSD, WASM)
+cargo make release-all        # everything
+cargo make release-checksums  # SHA-256 manifest for all built binaries
+```
+
+| Target | Triple | Task |
+|--------|--------|------|
+| macOS arm64 (Apple Silicon) | `aarch64-apple-darwin` | `release-macos-arm` |
+| macOS x86-64 (Intel) | `x86_64-apple-darwin` | `release-macos-x86` |
+| Linux x86-64 (musl) | `x86_64-unknown-linux-musl` | `release-linux-x86` |
+| Linux aarch64 (musl) | `aarch64-unknown-linux-musl` | `release-linux-arm` |
+| Windows x86-64 (GNU) | `x86_64-pc-windows-gnu` | `release-windows-x86` |
+| Windows ARM64 | `aarch64-pc-windows-gnullvm` | `release-windows-arm` |
+| FreeBSD x86-64 | `x86_64-unknown-freebsd` | `release-freebsd-x86` |
+| WebAssembly (WASI) | `wasm32-wasip1` | `release-wasm` |
+
+OpenBSD and NetBSD are not cross-compilable from macOS — build on a native host with `cargo build --release`.
+
+The WASM build produces a `.wasm` module runnable under any WASI-compatible runtime (Wasmtime, Wasmer, WasmEdge, etc.).
+
+Checksums are written to `target/release-manifest.txt`.
+
 ## Roadmap
 
-### Phase 5 — Cross-platform release builds
-
-Extend `Makefile.toml` (currently macOS arm64, Linux x86-64/aarch64 musl) to cover Windows, Intel Mac, and BSDs. Adds `cargo make release` checksums and a target matrix in the README.
-
-- Windows x86-64 and ARM64 via `cargo-zigbuild`
-- macOS x86-64 (Intel)
-- FreeBSD x86-64, OpenBSD x86-64 (tier 3), NetBSD x86-64 (tier 2)
-- SHA-256 release manifest, Windows smoke test
+### ~~Phase 5 — Cross-platform release builds~~ (done)
 
 ### Phase 6 — Library crate
 

@@ -8,7 +8,7 @@ BIN_DIR="$HOME/.local/bin"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Building $BINARY_NAME (release)..."
-cargo build --release --manifest-path "$REPO_DIR/Cargo.toml"
+cargo build --release --all-features --manifest-path "$REPO_DIR/Cargo.toml"
 
 BUILT="$REPO_DIR/target/release/$BINARY_NAME"
 if [[ ! -f "$BUILT" ]]; then

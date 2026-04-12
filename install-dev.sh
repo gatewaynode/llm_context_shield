@@ -6,7 +6,7 @@ LINK_NAME="llm-shield"
 TARGET_DIR="$HOME/.local/bin"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cargo build --manifest-path "$REPO_DIR/Cargo.toml"
+cargo build --all-features --manifest-path "$REPO_DIR/Cargo.toml"
 
 BINARY_PATH="$REPO_DIR/target/debug/$BINARY_NAME"
 

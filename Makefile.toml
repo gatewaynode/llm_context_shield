@@ -1,10 +1,17 @@
 [config]
 default_to_workspace = false
 
-[tasks.release-macos]
-description = "Build macOS native binary (Apple Silicon)"
+# --- Core targets ---
+
+[tasks.release-macos-arm]
+description = "Build macOS Apple Silicon binary"
 command = "cargo"
 args = ["build", "--release"]
+
+[tasks.release-macos-x86]
+description = "Build macOS Intel binary"
+command = "cargo"
+args = ["build", "--release", "--target", "x86_64-apple-darwin"]
 
 [tasks.release-linux-x86]
 description = "Build Linux x86-64 static binary (musl)"
@@ -16,6 +23,62 @@ description = "Build Linux aarch64 static binary (musl)"
 command = "cargo"
 args = ["zigbuild", "--release", "--target", "aarch64-unknown-linux-musl"]
 
+[tasks.release-windows-x86]
+description = "Build Windows x86-64 binary (GNU)"
+command = "cargo"
+args = ["zigbuild", "--release", "--target", "x86_64-pc-windows-gnu"]
+
 [tasks.release]
-description = "Build all release targets: macOS, Linux x86-64, Linux aarch64"
-dependencies = ["release-macos", "release-linux-x86", "release-linux-arm"]
+description = "Build all core release targets"
+dependencies = ["release-macos-arm", "release-macos-x86", "release-linux-x86", "release-linux-arm", "release-windows-x86"]
+
+# --- Extra targets ---
+
+[tasks.release-windows-arm]
+description = "Build Windows ARM64 binary"
+command = "cargo"
+args = ["zigbuild", "--release", "--target", "aarch64-pc-windows-gnullvm"]
+
+[tasks.release-freebsd-x86]
+description = "Build FreeBSD x86-64 binary"
+command = "cargo"
+args = ["zigbuild", "--release", "--target", "x86_64-unknown-freebsd"]
+
+[tasks.release-wasm]
+description = "Build WebAssembly WASI binary"
+command = "cargo"
+args = ["build", "--release", "--target", "wasm32-wasip1"]
+
+[tasks.release-extras]
+description = "Build extra release targets: Windows ARM, FreeBSD, WASM"
+dependencies = ["release-windows-arm", "release-freebsd-x86", "release-wasm"]
+
+[tasks.release-all]
+description = "Build all release targets including extras"
+dependencies = ["release", "release-extras"]
+
+# --- Checksums ---
+
+[tasks.release-checksums]
+description = "Generate SHA-256 checksums for all release binaries"
+script = '''
+#!/usr/bin/env bash
+set -euo pipefail
+MANIFEST="target/release-manifest.txt"
+: > "$MANIFEST"
+for bin in \
+  target/release/llm_context_shield \
+  target/x86_64-apple-darwin/release/llm_context_shield \
+  target/x86_64-unknown-linux-musl/release/llm_context_shield \
+  target/aarch64-unknown-linux-musl/release/llm_context_shield \
+  target/x86_64-pc-windows-gnu/release/llm_context_shield.exe \
+  target/aarch64-pc-windows-gnullvm/release/llm_context_shield.exe \
+  target/x86_64-unknown-freebsd/release/llm_context_shield \
+  target/wasm32-wasip1/release/llm_context_shield.wasm; do
+  if [[ -f "$bin" ]]; then
+    shasum -a 256 "$bin" >> "$MANIFEST"
+  fi
+done
+echo "Checksums written to $MANIFEST"
+cat "$MANIFEST"
+'''
