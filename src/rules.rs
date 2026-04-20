@@ -71,6 +71,7 @@ fn bundled_yara() -> &'static [&'static str] {
         include_str!("../rules/yara/delimiter_manipulation.yar"),
         include_str!("../rules/yara/instruction_override.yar"),
         include_str!("../rules/yara/refusal_suppression.yar"),
+        include_str!("../rules/yara/response_steering.yar"),
     ]
 }
 
@@ -84,6 +85,7 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/delimiter_manipulation.syara"),
         include_str!("../rules/syara/instruction_override.syara"),
         include_str!("../rules/syara/refusal_suppression.syara"),
+        include_str!("../rules/syara/response_steering.syara"),
     ]
 }
 
@@ -200,7 +202,8 @@ Files are loaded flat (no recursion). Each rule must set the `category` and
                                            //     hidden_content,
                                            //     delimiter_manipulation,
                                            //     instruction_override,
-                                           //     refusal_suppression
+                                           //     refusal_suppression,
+                                           //     response_steering
         severity    = "high"               // low | medium | high | critical
         description = "short explanation"  // optional, surfaces in reports
 

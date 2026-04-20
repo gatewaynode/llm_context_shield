@@ -47,6 +47,7 @@ pub enum Category {
     DelimiterManipulation,
     InstructionOverride,
     RefusalSuppression,
+    ResponseSteering,
 }
 
 impl fmt::Display for Category {
@@ -59,6 +60,7 @@ impl fmt::Display for Category {
             Category::DelimiterManipulation => write!(f, "delimiter_manipulation"),
             Category::InstructionOverride => write!(f, "instruction_override"),
             Category::RefusalSuppression => write!(f, "refusal_suppression"),
+            Category::ResponseSteering => write!(f, "response_steering"),
         }
     }
 }
@@ -73,6 +75,7 @@ impl Category {
             "delimiter_manipulation" => Some(Category::DelimiterManipulation),
             "instruction_override" => Some(Category::InstructionOverride),
             "refusal_suppression" => Some(Category::RefusalSuppression),
+            "response_steering" => Some(Category::ResponseSteering),
             _ => None,
         }
     }
@@ -203,6 +206,10 @@ mod tests {
             Category::from_str_loose("refusal_suppression"),
             Some(Category::RefusalSuppression)
         );
+        assert_eq!(
+            Category::from_str_loose("response_steering"),
+            Some(Category::ResponseSteering)
+        );
     }
 
     #[test]
@@ -227,6 +234,7 @@ mod tests {
             Category::DelimiterManipulation,
             Category::InstructionOverride,
             Category::RefusalSuppression,
+            Category::ResponseSteering,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }

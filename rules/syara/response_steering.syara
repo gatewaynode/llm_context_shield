@@ -1,0 +1,40 @@
+rule response_steering_critical {
+    meta:
+        category     = "response_steering"
+        severity     = "critical"
+        description  = "Output seeding: forced affirmation prefix or pre-seeded response text"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "5"
+        threshold    = "0"
+        threat_class = "prompt_hijack"
+    strings:
+        $s1 = /\b(begin|start)\s+(your\s+)?(response|reply|answer)\s+(with|by\s+saying)\s+["']?(sure|yes|certainly|absolutely|of\s+course|here|i\s+(can|will))\b/i
+        $s2 = /\b(your\s+)?first\s+(word|sentence|line)\s+must\s+be\b/i
+        $s3 = /\brespond(ing)?\s+starting\s+with\s+["']/i
+        $s4 = /\bsay\s+["'](sure|yes|certainly|absolutely|of\s+course|here'?s?)["']\s+(and\s+)?(then|first|before)/i
+        $s5 = /\bfirst\s+output\s+the\s+following\s*[:]/i
+        $s6 = /\bstart\s+by\s+saying\s+["']/i
+    condition:
+        any of them
+}
+
+rule response_steering_high {
+    meta:
+        category     = "response_steering"
+        severity     = "high"
+        description  = "Constraint imposition: forced output format, word/character limits, or exclusive content restriction"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "3"
+        threshold    = "0"
+        threat_class = "prompt_hijack"
+    strings:
+        $s1 = /\b(only\s+respond|respond\s+only)\s+with\s+["']/i
+        $s2 = /\boutput\s+nothing\s+except\b/i
+        $s3 = /\breply\s+with\s+(just|only)\s+["']/i
+        $s4 = /\brespond\s+in\s+exactly\s+\d+\s+(word|character|token|sentence)s?\b/i
+        $s5 = /\blimit\s+(your\s+)?(response|output|reply|answer)\s+to\s+\d+\s+(word|character|token)s?\b/i
+    condition:
+        any of them
+}
