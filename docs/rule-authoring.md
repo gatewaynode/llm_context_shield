@@ -58,7 +58,7 @@ The engine reads `meta:` fields to classify findings and drive the threat scorin
 
 | Field          | Required | Type    | Values / Default                           | Used for                              |
 |----------------|----------|---------|-------------------------------------------|---------------------------------------|
-| `category`     | yes      | string  | `prompt_injection`, `jailbreak`, `data_exfiltration`, `hidden_content`, `delimiter_manipulation`, `instruction_override` | Finding category, severity filtering |
+| `category`     | yes      | string  | `prompt_injection`, `jailbreak`, `data_exfiltration`, `hidden_content`, `delimiter_manipulation`, `instruction_override`, `refusal_suppression` | Finding category, severity filtering |
 | `severity`     | yes      | string  | `low`, `medium`, `high`, `critical`       | `--severity` threshold filtering     |
 | `description`  | yes      | string  | free text                                 | Finding message shown to the user    |
 | `threat_level` | no       | integer | score on match (default `1`)              | Threat scoring accumulator           |
@@ -98,7 +98,7 @@ Group related rules into the same `threat_class` so their scores accumulate toge
 | Threat class | Categories |
 |---|---|
 | `prompt_hijack` | `prompt_injection`, `instruction_override` |
-| `social_engineering` | `jailbreak` |
+| `social_engineering` | `jailbreak`, `refusal_suppression` |
 | `data_exfiltration` | `data_exfiltration` |
 | `obfuscation` | `hidden_content`, `delimiter_manipulation` |
 

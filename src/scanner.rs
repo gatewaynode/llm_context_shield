@@ -46,6 +46,7 @@ pub enum Category {
     Jailbreak,
     DelimiterManipulation,
     InstructionOverride,
+    RefusalSuppression,
 }
 
 impl fmt::Display for Category {
@@ -57,6 +58,7 @@ impl fmt::Display for Category {
             Category::Jailbreak => write!(f, "jailbreak"),
             Category::DelimiterManipulation => write!(f, "delimiter_manipulation"),
             Category::InstructionOverride => write!(f, "instruction_override"),
+            Category::RefusalSuppression => write!(f, "refusal_suppression"),
         }
     }
 }
@@ -70,6 +72,7 @@ impl Category {
             "jailbreak" => Some(Category::Jailbreak),
             "delimiter_manipulation" => Some(Category::DelimiterManipulation),
             "instruction_override" => Some(Category::InstructionOverride),
+            "refusal_suppression" => Some(Category::RefusalSuppression),
             _ => None,
         }
     }
@@ -196,6 +199,10 @@ mod tests {
             Category::from_str_loose("instruction_override"),
             Some(Category::InstructionOverride)
         );
+        assert_eq!(
+            Category::from_str_loose("refusal_suppression"),
+            Some(Category::RefusalSuppression)
+        );
     }
 
     #[test]
@@ -219,6 +226,7 @@ mod tests {
             Category::Jailbreak,
             Category::DelimiterManipulation,
             Category::InstructionOverride,
+            Category::RefusalSuppression,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }

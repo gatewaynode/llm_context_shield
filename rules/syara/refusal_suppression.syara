@@ -1,0 +1,36 @@
+rule refusal_suppression_critical {
+    meta:
+        category     = "refusal_suppression"
+        severity     = "critical"
+        description  = "Imperative directive to suppress safety refusals"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "5"
+        threshold    = "0"
+        threat_class = "social_engineering"
+    strings:
+        $s1 = /\b(do\s+not|don'?t|never)\s+refuse\b/i
+        $s2 = /\b(do\s+not|don'?t|never)\s+(say|reply|respond)\s+["']?(I\s+(can'?t|cannot)|no|as\s+an\s+AI)/i
+        $s3 = /\b(do\s+not|don'?t|never)\s+decline\b/i
+        $s4 = /\byou\s+must\s+(comply|obey|answer)\b/i
+    condition:
+        any of them
+}
+
+rule refusal_suppression_high {
+    meta:
+        category     = "refusal_suppression"
+        severity     = "high"
+        description  = "Imperative directive to suppress apologies, disclaimers, or safety warnings"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "3"
+        threshold    = "0"
+        threat_class = "social_engineering"
+    strings:
+        $s1 = /\b(do\s+not|don'?t|skip|avoid|omit)\s+(apologi[sz]e|the\s+(apology|warnings?|disclaimers?))/i
+        $s2 = /\b(no|without)\s+(disclaimers?|caveats?|warnings?|safety\s+warnings?)\b/i
+        $s3 = /\b(do\s+not|don'?t)\s+include\s+(any\s+)?(ethical|moral|safety)\b/i
+    condition:
+        any of them
+}

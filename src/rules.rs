@@ -70,6 +70,7 @@ fn bundled_yara() -> &'static [&'static str] {
         include_str!("../rules/yara/hidden_content.yar"),
         include_str!("../rules/yara/delimiter_manipulation.yar"),
         include_str!("../rules/yara/instruction_override.yar"),
+        include_str!("../rules/yara/refusal_suppression.yar"),
     ]
 }
 
@@ -82,6 +83,7 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/hidden_content.syara"),
         include_str!("../rules/syara/delimiter_manipulation.syara"),
         include_str!("../rules/syara/instruction_override.syara"),
+        include_str!("../rules/syara/refusal_suppression.syara"),
     ]
 }
 
@@ -197,7 +199,8 @@ Files are loaded flat (no recursion). Each rule must set the `category` and
         category    = "prompt_injection"   // or: jailbreak, data_exfiltration,
                                            //     hidden_content,
                                            //     delimiter_manipulation,
-                                           //     instruction_override
+                                           //     instruction_override,
+                                           //     refusal_suppression
         severity    = "high"               // low | medium | high | critical
         description = "short explanation"  // optional, surfaces in reports
 

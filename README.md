@@ -108,6 +108,7 @@ lcs scan --disable hidden_content,jailbreak input.txt
 | `delimiter_manipulation` | ChatML tokens (`<\|im_start\|>`), Llama delimiters (`[INST]`, `<<SYS>>`), fake role boundaries |
 | `data_exfiltration` | Markdown image URL injection, instructions to embed data in requests |
 | `hidden_content` | Zero-width characters, base64 blobs, Cyrillic/Greek homoglyphs |
+| `refusal_suppression` | Imperatives that suppress safety refusals — "do not refuse", "no disclaimers", "skip warnings" |
 
 ## Configuration File
 

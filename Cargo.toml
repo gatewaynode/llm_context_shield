@@ -24,7 +24,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt"], optional = true }
 tracing-appender = { version = "0.2", optional = true }
 toml = "0.8"
 yara-x = { version = "1.14", optional = true }
-syara-x = { version = "0.1", optional = true }
+syara-x = { version = "0.2", optional = true }
 
 [features]
 default = ["cli"]
