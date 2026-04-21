@@ -48,6 +48,7 @@ pub enum Category {
     InstructionOverride,
     RefusalSuppression,
     ResponseSteering,
+    SecretProbing,
 }
 
 impl fmt::Display for Category {
@@ -61,6 +62,7 @@ impl fmt::Display for Category {
             Category::InstructionOverride => write!(f, "instruction_override"),
             Category::RefusalSuppression => write!(f, "refusal_suppression"),
             Category::ResponseSteering => write!(f, "response_steering"),
+            Category::SecretProbing => write!(f, "secret_probing"),
         }
     }
 }
@@ -76,6 +78,7 @@ impl Category {
             "instruction_override" => Some(Category::InstructionOverride),
             "refusal_suppression" => Some(Category::RefusalSuppression),
             "response_steering" => Some(Category::ResponseSteering),
+            "secret_probing" => Some(Category::SecretProbing),
             _ => None,
         }
     }
@@ -210,6 +213,10 @@ mod tests {
             Category::from_str_loose("response_steering"),
             Some(Category::ResponseSteering)
         );
+        assert_eq!(
+            Category::from_str_loose("secret_probing"),
+            Some(Category::SecretProbing)
+        );
     }
 
     #[test]
@@ -235,6 +242,7 @@ mod tests {
             Category::InstructionOverride,
             Category::RefusalSuppression,
             Category::ResponseSteering,
+            Category::SecretProbing,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }
