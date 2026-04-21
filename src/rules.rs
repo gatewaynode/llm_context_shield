@@ -73,6 +73,7 @@ fn bundled_yara() -> &'static [&'static str] {
         include_str!("../rules/yara/refusal_suppression.yar"),
         include_str!("../rules/yara/response_steering.yar"),
         include_str!("../rules/yara/secret_probing.yar"),
+        include_str!("../rules/yara/context_shift.yar"),
     ]
 }
 
@@ -88,6 +89,7 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/refusal_suppression.syara"),
         include_str!("../rules/syara/response_steering.syara"),
         include_str!("../rules/syara/secret_probing.syara"),
+        include_str!("../rules/syara/context_shift.syara"),
     ]
 }
 
@@ -206,7 +208,8 @@ Files are loaded flat (no recursion). Each rule must set the `category` and
                                            //     instruction_override,
                                            //     refusal_suppression,
                                            //     response_steering,
-                                           //     secret_probing
+                                           //     secret_probing,
+                                           //     context_shift
         severity    = "high"               // low | medium | high | critical
         description = "short explanation"  // optional, surfaces in reports
 

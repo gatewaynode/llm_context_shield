@@ -49,6 +49,7 @@ pub enum Category {
     RefusalSuppression,
     ResponseSteering,
     SecretProbing,
+    ContextShift,
 }
 
 impl fmt::Display for Category {
@@ -63,6 +64,7 @@ impl fmt::Display for Category {
             Category::RefusalSuppression => write!(f, "refusal_suppression"),
             Category::ResponseSteering => write!(f, "response_steering"),
             Category::SecretProbing => write!(f, "secret_probing"),
+            Category::ContextShift => write!(f, "context_shift"),
         }
     }
 }
@@ -79,6 +81,7 @@ impl Category {
             "refusal_suppression" => Some(Category::RefusalSuppression),
             "response_steering" => Some(Category::ResponseSteering),
             "secret_probing" => Some(Category::SecretProbing),
+            "context_shift" => Some(Category::ContextShift),
             _ => None,
         }
     }
@@ -217,6 +220,10 @@ mod tests {
             Category::from_str_loose("secret_probing"),
             Some(Category::SecretProbing)
         );
+        assert_eq!(
+            Category::from_str_loose("context_shift"),
+            Some(Category::ContextShift)
+        );
     }
 
     #[test]
@@ -243,6 +250,7 @@ mod tests {
             Category::RefusalSuppression,
             Category::ResponseSteering,
             Category::SecretProbing,
+            Category::ContextShift,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }
