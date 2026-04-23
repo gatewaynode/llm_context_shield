@@ -2180,9 +2180,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syara-x"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04559e5cf7df08d428f150ac270ac4531a0613395ec43fb41707ebd8b7853621"
+checksum = "e974d2361722ee7b7d53422bf9d28e5edd4cd185c513d2aaa6a03e083525ee4f"
 dependencies = [
  "indexmap",
  "regex",
