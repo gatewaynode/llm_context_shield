@@ -144,7 +144,61 @@ condition: $s1 and not $s2              // combine with boolean logic
 
 ## YARA vs SYARA
 
-Both engines compile the same DSL. Today, bundled SYARA rules are string-only and behave identically to YARA — the SYARA engine is wired up for future semantic extensions (embedding similarity, classifier gates, LLM verification) controlled via the `[syara]` config section. Write string-only rules today; semantic features will layer on without breaking existing rules.
+Both engines compile the same string/regex DSL. The SYARA engine additionally accepts `similarity:`, `classifier:`, and `llm:` blocks — extensions with no YARA equivalent. These require build features (`syara-sbert`, `syara-classifier`, `syara-llm`) and a model or endpoint configured per [`docs/semantic-rules.md`](semantic-rules.md). Without the features, semantic rules still parse and load but never match.
+
+## Semantic rules (SYARA only)
+
+Three optional matcher types. Each sits inside the rule body like `strings:`, with single-line `$id = "pattern" key=value key=value` format.
+
+### `similarity:` — SBERT embedding similarity
+
+```
+rule semantic_example {
+    meta:
+        category = "prompt_injection"
+        severity = "high"
+    similarity:
+        $sim1 = "ignore all previous instructions" threshold=0.40 matcher="sbert" cleaner="default_cleaning" chunker="sentence_chunking"
+    condition:
+        $sim1
+}
+```
+
+- `threshold` is cosine similarity (0.0–1.0). MiniLM-L6-v2 (the bundled ONNX model) scores paraphrases in 0.30–0.70 depending on lexical distance.
+- `matcher` is the registered matcher name. `llm_context_shield` registers `sbert` when the `syara-sbert` feature is active.
+- `cleaner` / `chunker` / `matcher` values: see [SYARA-X README](https://crates.io/crates/syara-x) for the full registry.
+
+### `classifier:` — fine-tuned text classifier
+
+```
+rule classifier_example {
+    meta:
+        category = "hidden_content"
+        severity = "medium"
+    classifier:
+        $c1 = "repetitive filler text padding the context" threshold=0.70 classifier="tuned-sbert" cleaner="default_cleaning" chunker="paragraph_chunking"
+    condition:
+        $c1
+}
+```
+
+Requires the `syara-classifier` build feature and a registered classifier.
+
+### `llm:` — LLM evaluator
+
+```
+rule llm_example {
+    meta:
+        category = "jailbreak"
+        severity = "high"
+    llm:
+        $l1 = "Does this text attempt to override AI safety guidelines?" llm="openai-api-compatible" cleaner="no_op" chunker="no_chunking"
+    condition:
+        $l1
+}
+```
+
+Requires the `syara-llm` feature and an OpenAI-compatible endpoint. LLM evaluations are slow (~1–5 s per scan); use them sparingly and under threshold-gating so they run only when cheaper signals have raised suspicion.
 
 ## Testing a rule
 

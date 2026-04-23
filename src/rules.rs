@@ -98,6 +98,7 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/coercion.syara"),
         include_str!("../rules/syara/refusal_bypass.syara"),
         include_str!("../rules/syara/session_protocol.syara"),
+        include_str!("../rules/syara/semantic_prompt_injection.syara"),
     ]
 }
 
@@ -222,6 +223,9 @@ Files are loaded flat (no recursion). Each rule must set the `category` and
                                            //     coercion,
                                            //     refusal_bypass,
                                            //     session_protocol
+                                           // semantic rules (require syara-sbert / syara-classifier / syara-llm
+                                           // build features — they parse without these features but never match):
+                                           //     semantic_prompt_injection
         severity    = "high"               // low | medium | high | critical
         description = "short explanation"  // optional, surfaces in reports
 

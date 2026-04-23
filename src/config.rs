@@ -38,6 +38,10 @@ pub struct SyaraConfig {
     pub ollama_url: Option<String>,
     pub embed_model: Option<String>,
     pub llm_model: Option<String>,
+    /// Path to the directory containing `model.onnx` + `tokenizer.json` for the
+    /// ONNX-local `sbert` matcher (used by the `syara-sbert` / `syara-classifier`
+    /// features). Not required when using HTTP-endpoint matchers.
+    pub onnx_model_dir: Option<String>,
 }
 
 /// Threat scoring configuration.
@@ -206,6 +210,11 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 
 # Model name for LLM evaluator.
 # llm_model = "llama3.2"
+
+# Directory containing model.onnx + tokenizer.json for the ONNX-local sbert
+# matcher (used when building with --features syara-sbert). The default path
+# is searched when this is unset. See docs/semantic-rules.md.
+# onnx_model_dir = "./models/all-MiniLM-L6-v2"
 
 [scoring]
 # Cross-branch escalation: when any threat class accumulates this score,

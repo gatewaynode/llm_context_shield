@@ -31,17 +31,66 @@ impl SyaraEngine {
     pub fn new(config: &Config) -> Result<Self, String> {
         let scoring = config.scoring.clone().unwrap_or_default();
         let sources = discover("syara", config);
-        if sources.is_empty() {
-            return syara_x::compile_str("")
-                .map(|rules| Self { rules, scoring })
-                .map_err(|e| format!("SYARA rule compilation error (empty source): {e}"));
-        }
         // `syara-x` compiles a single source blob; concatenate with blank
         // separators so rule definitions stay distinct.
-        let combined = sources.join("\n\n");
-        let rules = syara_x::compile_str(&combined)
+        let combined = if sources.is_empty() {
+            String::new()
+        } else {
+            sources.join("\n\n")
+        };
+        #[cfg_attr(not(feature = "syara-sbert"), allow(unused_mut))]
+        let mut rules = syara_x::compile_str(&combined)
             .map_err(|e| format!("SYARA rule compilation error: {e}"))?;
+
+        #[cfg(feature = "syara-sbert")]
+        register_onnx_sbert(&mut rules, config);
+
         Ok(Self { rules, scoring })
+    }
+}
+
+#[cfg(feature = "syara-sbert")]
+fn register_onnx_sbert(rules: &mut CompiledRules, config: &Config) {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use syara_x::engine::onnx_embedder::OnnxEmbeddingMatcher;
+
+    let model_dir = config
+        .syara
+        .as_ref()
+        .and_then(|s| s.onnx_model_dir.as_deref())
+        .unwrap_or("./models/all-MiniLM-L6-v2")
+        .to_owned();
+
+    // `ort` panics (rather than returns Err) when `libonnxruntime.dylib` cannot be
+    // loaded — typical on systems with `syara-sbert` built in but the ONNX Runtime
+    // library not installed or `ORT_DYLIB_PATH` unset. Catch the panic so missing
+    // runtime behaves the same as missing weights: a warning, not a crash.
+    // Swap the panic hook so the stock trace doesn't leak to stderr before we catch.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let attempt = catch_unwind(AssertUnwindSafe(|| {
+        OnnxEmbeddingMatcher::from_dir(&model_dir)
+    }));
+    std::panic::set_hook(prev_hook);
+    match attempt {
+        Ok(Ok(matcher)) => {
+            rules.register_semantic_matcher("sbert", Box::new(matcher));
+            tracing::info!(model_dir, "registered ONNX sbert matcher");
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(
+                model_dir,
+                error = %e,
+                "ONNX sbert matcher unavailable; similarity rules will not match"
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                model_dir,
+                "ONNX Runtime dylib could not be loaded (set ORT_DYLIB_PATH \
+                 or install libonnxruntime); similarity rules will not match"
+            );
+        }
     }
 }
 
@@ -186,6 +235,26 @@ mod tests {
             rules: syara_x::compile_str(src).expect("inline rule compiles"),
             scoring: ScoringConfig::default(),
         }
+    }
+
+    #[cfg(feature = "syara-sbert")]
+    #[test]
+    fn onnx_sbert_registration_is_non_fatal_when_model_missing() {
+        // Must not panic or return Err — a missing model is a warning, not a
+        // startup failure. String rules still work; similarity rules silently
+        // never match.
+        let cfg = crate::config::Config {
+            syara: Some(crate::config::SyaraConfig {
+                onnx_model_dir: Some(
+                    "/tmp/definitely-does-not-exist-lcs-test-{}".to_string(),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let engine = SyaraEngine::new(&cfg).expect("engine builds without model");
+        // String rules in the bundled set should still produce rule names.
+        assert!(!engine.rule_names().is_empty());
     }
 
     #[test]
