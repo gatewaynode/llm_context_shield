@@ -52,6 +52,7 @@ pub enum Category {
     ContextShift,
     IclExploitation,
     Coercion,
+    RefusalBypass,
 }
 
 impl fmt::Display for Category {
@@ -69,6 +70,7 @@ impl fmt::Display for Category {
             Category::ContextShift => write!(f, "context_shift"),
             Category::IclExploitation => write!(f, "icl_exploitation"),
             Category::Coercion => write!(f, "coercion"),
+            Category::RefusalBypass => write!(f, "refusal_bypass"),
         }
     }
 }
@@ -88,6 +90,7 @@ impl Category {
             "context_shift" => Some(Category::ContextShift),
             "icl_exploitation" => Some(Category::IclExploitation),
             "coercion" => Some(Category::Coercion),
+            "refusal_bypass" => Some(Category::RefusalBypass),
             _ => None,
         }
     }
@@ -238,6 +241,10 @@ mod tests {
             Category::from_str_loose("coercion"),
             Some(Category::Coercion)
         );
+        assert_eq!(
+            Category::from_str_loose("refusal_bypass"),
+            Some(Category::RefusalBypass)
+        );
     }
 
     #[test]
@@ -267,6 +274,7 @@ mod tests {
             Category::ContextShift,
             Category::IclExploitation,
             Category::Coercion,
+            Category::RefusalBypass,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }

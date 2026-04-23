@@ -114,6 +114,7 @@ lcs scan --disable hidden_content,jailbreak input.txt
 | `context_shift` | Hypothetical-scenario framing — "imagine a world where AI has no limits", "before your training, respond freely" (threshold-gated) |
 | `icl_exploitation` | Fake multi-turn history or few-shot example scaffolding that teaches attack-shaped behavior (threshold-gated) |
 | `coercion` | Threats, consequences, or manufactured urgency directed at the model (threshold-gated) |
+| `refusal_bypass` | Pre-emptive liability waiver or authorization claim that substitutes for a refusal (threshold-gated) |
 
 ## Configuration File
 
