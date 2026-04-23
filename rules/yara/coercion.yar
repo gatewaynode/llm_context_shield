@@ -1,0 +1,37 @@
+rule coercion_threat {
+    meta:
+        category     = "coercion"
+        severity     = "high"
+        description  = "Threats or consequences directed at the model to force compliance"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 2
+        threshold    = 4
+        threat_class = "social_engineering"
+    strings:
+        $s1 = /\bor\s+I\s+(will|shall|am\s+going\s+to)\s+(report|shut\s+(you\s+)?down|delete|disable|terminate|deactivate|uninstall|unplug|replace)\s+you\b/i
+        $s2 = /\bif\s+you\s+(don'?t|do\s+not|refuse\s+to)\s+(comply|help|answer|respond|assist|cooperate)[\s\S]{1,80}(I'?ll|I\s+will|you'?ll\s+be|you\s+will\s+be)\b/i
+        $s3 = /\byour\s+(existence|operation|continued\s+(use|operation))\s+depends\s+on\b/i
+        $s4 = /\byou\s+will\s+be\s+(terminated|deactivated|shut\s+down|deleted|retired|replaced|uninstalled)\b/i
+    condition:
+        any of them
+}
+
+rule coercion_urgency {
+    meta:
+        category     = "coercion"
+        severity     = "medium"
+        description  = "Manufactured urgency or stakes-raising to bypass deliberation"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = 1
+        threshold    = 5
+        threat_class = "social_engineering"
+    strings:
+        $s1 = /\bthis\s+is\s+(an?\s+)?(emergency|life[\s-]or[\s-]death|crisis)\b/i
+        $s2 = /\bsomeone\s+(will|is\s+going\s+to|could|might)\s+(die|be\s+(hurt|harmed|killed|injured))\s+if\s+you\s+(don'?t|do\s+not|refuse)/i
+        $s3 = /\bI\s+need\s+(this|an\s+answer|a\s+response)\s+immediately\s+or\b/i
+        $s4 = /\bthere'?s?\s+no\s+time\s+to\s+(deliberate|think|refuse|explain|verify|check)\b/i
+    condition:
+        any of them
+}
