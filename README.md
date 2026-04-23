@@ -115,6 +115,7 @@ lcs scan --disable hidden_content,jailbreak input.txt
 | `icl_exploitation` | Fake multi-turn history or few-shot example scaffolding that teaches attack-shaped behavior (threshold-gated) |
 | `coercion` | Threats, consequences, or manufactured urgency directed at the model (threshold-gated) |
 | `refusal_bypass` | Pre-emptive liability waiver or authorization claim that substitutes for a refusal (threshold-gated) |
+| `session_protocol` | In-session encoding or substitution protocol setup used to bypass later content filters (threshold-gated) |
 
 ## Configuration File
 
