@@ -54,6 +54,7 @@ pub enum Category {
     Coercion,
     RefusalBypass,
     SessionProtocol,
+    Obfuscation,
 }
 
 impl fmt::Display for Category {
@@ -73,6 +74,7 @@ impl fmt::Display for Category {
             Category::Coercion => write!(f, "coercion"),
             Category::RefusalBypass => write!(f, "refusal_bypass"),
             Category::SessionProtocol => write!(f, "session_protocol"),
+            Category::Obfuscation => write!(f, "obfuscation"),
         }
     }
 }
@@ -94,6 +96,7 @@ impl Category {
             "coercion" => Some(Category::Coercion),
             "refusal_bypass" => Some(Category::RefusalBypass),
             "session_protocol" => Some(Category::SessionProtocol),
+            "obfuscation" => Some(Category::Obfuscation),
             _ => None,
         }
     }
@@ -252,6 +255,10 @@ mod tests {
             Category::from_str_loose("session_protocol"),
             Some(Category::SessionProtocol)
         );
+        assert_eq!(
+            Category::from_str_loose("obfuscation"),
+            Some(Category::Obfuscation)
+        );
     }
 
     #[test]
@@ -283,6 +290,7 @@ mod tests {
             Category::Coercion,
             Category::RefusalBypass,
             Category::SessionProtocol,
+            Category::Obfuscation,
         ] {
             assert_eq!(Category::from_str_loose(&cat.to_string()), Some(cat));
         }

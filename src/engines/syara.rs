@@ -45,6 +45,9 @@ impl SyaraEngine {
         #[cfg(feature = "syara-sbert")]
         register_onnx_sbert(&mut rules, config);
 
+        #[cfg(feature = "syara-classifier")]
+        register_onnx_classifier(&mut rules, config);
+
         Ok(Self { rules, scoring })
     }
 }
@@ -89,6 +92,52 @@ fn register_onnx_sbert(rules: &mut CompiledRules, config: &Config) {
                 model_dir,
                 "ONNX Runtime dylib could not be loaded (set ORT_DYLIB_PATH \
                  or install libonnxruntime); similarity rules will not match"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "syara-classifier")]
+fn register_onnx_classifier(rules: &mut CompiledRules, config: &Config) {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use syara_x::engine::classifier::OnnxEmbeddingClassifier;
+
+    let model_dir = config
+        .syara
+        .as_ref()
+        .and_then(|s| s.onnx_model_dir.as_deref())
+        .unwrap_or("./models/all-MiniLM-L6-v2")
+        .to_owned();
+
+    // Same panic-handling dance as the sbert registration: `ort` panics on
+    // dylib load failure, which we surface as a warning so classifier rules
+    // silently never match rather than crashing the process.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let attempt = catch_unwind(AssertUnwindSafe(|| {
+        OnnxEmbeddingClassifier::from_dir(&model_dir)
+    }));
+    std::panic::set_hook(prev_hook);
+    match attempt {
+        Ok(Ok(classifier)) => {
+            // Overrides SYARA-X's default HTTP-backed "tuned-sbert" classifier
+            // with the local ONNX one; `classifier:` rules reference
+            // `classifier="tuned-sbert"`.
+            rules.register_classifier("tuned-sbert", Box::new(classifier));
+            tracing::info!(model_dir, "registered ONNX tuned-sbert classifier");
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(
+                model_dir,
+                error = %e,
+                "ONNX classifier unavailable; classifier rules will not match"
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                model_dir,
+                "ONNX Runtime dylib could not be loaded (set ORT_DYLIB_PATH \
+                 or install libonnxruntime); classifier rules will not match"
             );
         }
     }
