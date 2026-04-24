@@ -101,6 +101,7 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/semantic_prompt_injection.syara"),
         include_str!("../rules/syara/compositional_attack.syara"),
         include_str!("../rules/syara/content_quality.syara"),
+        include_str!("../rules/syara/semantic_coercion.syara"),
     ]
 }
 
