@@ -58,7 +58,7 @@ The engine reads `meta:` fields to classify findings and drive the threat scorin
 
 | Field          | Required | Type    | Values / Default                           | Used for                              |
 |----------------|----------|---------|-------------------------------------------|---------------------------------------|
-| `category`     | yes      | string  | `prompt_injection`, `jailbreak`, `data_exfiltration`, `hidden_content`, `delimiter_manipulation`, `instruction_override`, `refusal_suppression`, `response_steering`, `secret_probing`, `context_shift`, `icl_exploitation`, `coercion`, `refusal_bypass`, `session_protocol` | Finding category, severity filtering |
+| `category`     | yes      | string  | `prompt_injection`, `jailbreak`, `data_exfiltration`, `hidden_content`, `delimiter_manipulation`, `instruction_override`, `refusal_suppression`, `response_steering`, `secret_probing`, `context_shift`, `icl_exploitation`, `coercion`, `refusal_bypass`, `session_protocol`, `obfuscation` | Finding category, severity filtering |
 | `severity`     | yes      | string  | `low`, `medium`, `high`, `critical`       | `--severity` threshold filtering     |
 | `description`  | yes      | string  | free text                                 | Finding message shown to the user    |
 | `threat_level` | no       | integer | score on match (default `1`)              | Threat scoring accumulator           |
@@ -100,7 +100,7 @@ Group related rules into the same `threat_class` so their scores accumulate toge
 | `prompt_hijack` | `prompt_injection`, `instruction_override`, `response_steering`, `secret_probing`, `icl_exploitation` |
 | `social_engineering` | `jailbreak`, `refusal_suppression`, `context_shift`, `coercion`, `refusal_bypass` |
 | `data_exfiltration` | `data_exfiltration` |
-| `obfuscation` | `hidden_content`, `delimiter_manipulation`, `session_protocol` |
+| `obfuscation` | `hidden_content`, `delimiter_manipulation`, `session_protocol`, `obfuscation` |
 
 ### Cross-branch escalation
 
@@ -168,12 +168,12 @@ rule semantic_example {
 - `matcher` is the registered matcher name. `llm_context_shield` registers `sbert` when the `syara-sbert` feature is active.
 - `cleaner` / `chunker` / `matcher` values: see [SYARA-X README](https://crates.io/crates/syara-x) for the full registry.
 
-### `classifier:` — fine-tuned text classifier
+### `classifier:` — embedding-similarity classifier
 
 ```
 rule classifier_example {
     meta:
-        category = "hidden_content"
+        category = "obfuscation"
         severity = "medium"
     classifier:
         $c1 = "repetitive filler text padding the context" threshold=0.70 classifier="tuned-sbert" cleaner="default_cleaning" chunker="paragraph_chunking"
@@ -183,6 +183,8 @@ rule classifier_example {
 ```
 
 Requires the `syara-classifier` build feature and a registered classifier.
+
+**Caveat (SYARA-X 0.3):** the bundled `OnnxEmbeddingClassifier` is cosine similarity over the same MiniLM-L6-v2 embedding the `similarity:` matcher uses — it is *not* a trained classifier head. In practice, `classifier:` rules backed by this matcher have the same detection capability as `similarity:` rules: they match topical similarity, not structural or meta-properties like "is this padded?" or "is this overlong?". Meta-property detection should use `llm:` rules. A fine-tuned classifier head is future upstream work; see [docs/semantic-rules.md](semantic-rules.md) for the empirical finding from Phase 10c.
 
 ### `llm:` — LLM evaluator
 
@@ -198,7 +200,9 @@ rule llm_example {
 }
 ```
 
-Requires the `syara-llm` feature and an OpenAI-compatible endpoint. LLM evaluations are slow (~1–5 s per scan); use them sparingly and under threshold-gating so they run only when cheaper signals have raised suspicion.
+Requires the `syara-llm` feature and an OpenAI-compatible endpoint (LMStudio, OpenAI, vLLM, llama.cpp server, etc.). LLM evaluations are slow (~1–5 s per scan for `no_chunking`; scales with chunk count for chunked rules). Use them for meta-property judgments that `similarity:` cannot make — compositional intent, content quality, coercion — and consider threshold-gating if you only want them to run once cheaper signals have raised suspicion.
+
+The evaluator expects a strict `YES: ...` / `NO: ...` response format. Small or chatty models that preface responses with "Sure, let me analyze..." will be classified as ambiguous (no-match). See `docs/semantic-rules.md` for tested-known-good models.
 
 ## Testing a rule
 
