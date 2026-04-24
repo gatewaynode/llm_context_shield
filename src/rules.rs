@@ -99,6 +99,8 @@ fn bundled_syara() -> &'static [&'static str] {
         include_str!("../rules/syara/refusal_bypass.syara"),
         include_str!("../rules/syara/session_protocol.syara"),
         include_str!("../rules/syara/semantic_prompt_injection.syara"),
+        include_str!("../rules/syara/compositional_attack.syara"),
+        include_str!("../rules/syara/content_quality.syara"),
     ]
 }
 
@@ -225,7 +227,9 @@ Files are loaded flat (no recursion). Each rule must set the `category` and
                                            //     session_protocol
                                            // semantic rules (require syara-sbert / syara-classifier / syara-llm
                                            // build features — they parse without these features but never match):
-                                           //     semantic_prompt_injection
+                                           //     semantic_prompt_injection (requires syara-sbert)
+                                           //     prompt_injection (compositional — requires syara-llm)
+                                           //     obfuscation (content_quality — requires syara-llm)
         severity    = "high"               // low | medium | high | critical
         description = "short explanation"  // optional, surfaces in reports
 

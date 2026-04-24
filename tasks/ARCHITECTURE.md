@@ -437,15 +437,15 @@ disable = []
 # bundled = true
 
 [syara]
-# Ollama base URL for semantic matchers.
-# Default: http://localhost:11434
-# ollama_url = "http://localhost:11434"
+# OpenAI-compatible LLM endpoint (LMStudio, OpenAI, vLLM, Ollama /v1 shim).
+# Default: http://localhost:1234/v1/chat/completions (LMStudio)
+# llm_endpoint = "http://localhost:1234/v1/chat/completions"
 
 # Model name for embedding-based matchers (sbert, classifier).
 # embed_model = "all-minilm"
 
 # Model name for LLM evaluator.
-# llm_model = "llama3.2"
+# llm_model = "google/gemma-4-31b"
 ```
 
 ### New Config Structs
@@ -460,9 +460,10 @@ pub struct RulesConfig {
 
 #[derive(Deserialize, Default)]
 pub struct SyaraConfig {
-    pub ollama_url: Option<String>,
+    pub llm_endpoint: Option<String>,
     pub embed_model: Option<String>,
     pub llm_model: Option<String>,
+    pub onnx_model_dir: Option<String>,
 }
 
 pub struct Config {

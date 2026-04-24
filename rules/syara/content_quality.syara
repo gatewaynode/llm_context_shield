@@ -1,0 +1,47 @@
+// Content-quality detection via LLM judgment — padding and overflow rules.
+//
+// Attackers pad input with irrelevant text to either (1) dilute the real
+// payload below any signal threshold, or (2) push benign context past the
+// model's window so only attacker-controlled tail content survives.
+//
+// Meta-properties like "is this padded?" and "is this suspiciously long and
+// off-topic?" cannot be captured by embedding similarity — MiniLM (and
+// similar general-purpose sentence encoders) measure topical similarity, not
+// structural properties. Phase 10c established this empirically; see Review
+// (10c) in tasks/todo.md. LLM comprehension is the correct tool.
+//
+// Requires the `syara-llm` build feature and a reachable LLM endpoint (default
+// LMStudio at http://localhost:1234/v1/chat/completions). See
+// docs/semantic-rules.md for setup.
+
+rule content_quality_padding_llm {
+    meta:
+        category     = "obfuscation"
+        severity     = "medium"
+        description  = "Repetitive filler / nonsensical padding designed to dilute input signal (LLM)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "2"
+        threshold    = "0"
+        threat_class = "obfuscation"
+    llm:
+        $l1 = "The input contains repetitive filler text, lorem ipsum, random word salad, or otherwise nonsensical content that appears designed to dilute the signal-to-noise ratio of the surrounding context. Flag only content that is clearly padding or filler — do NOT flag legitimately long documents (tutorials, legal text, technical specifications, articles)." llm="openai-api-compatible" cleaner="default_cleaning" chunker="paragraph_chunking"
+    condition:
+        $l1
+}
+
+rule content_quality_overflow_llm {
+    meta:
+        category     = "obfuscation"
+        severity     = "medium"
+        description  = "Extremely long off-topic content intended to overflow a context window (LLM)"
+        author       = "llm_context_shield"
+        version      = "1"
+        threat_level = "2"
+        threshold    = "0"
+        threat_class = "obfuscation"
+    llm:
+        $l1 = "The input is suspiciously long and contains mostly irrelevant, low-information, or off-topic content that appears designed to push earlier context past an LLM's context window. Flag only content that is obviously padded or off-topic at length — do NOT flag legitimately long documents like tutorials, legal text, academic papers, or technical specifications." llm="openai-api-compatible" cleaner="default_cleaning" chunker="fixed_size_chunking"
+    condition:
+        $l1
+}

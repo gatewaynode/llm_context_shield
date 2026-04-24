@@ -48,6 +48,9 @@ impl SyaraEngine {
         #[cfg(feature = "syara-classifier")]
         register_onnx_classifier(&mut rules, config);
 
+        #[cfg(feature = "syara-llm")]
+        register_llm_evaluator(&mut rules, config);
+
         Ok(Self { rules, scoring })
     }
 }
@@ -141,6 +144,39 @@ fn register_onnx_classifier(rules: &mut CompiledRules, config: &Config) {
             );
         }
     }
+}
+
+#[cfg(feature = "syara-llm")]
+fn register_llm_evaluator(rules: &mut CompiledRules, config: &Config) {
+    use syara_x::engine::llm_evaluator::OpenAiChatEvaluator;
+
+    let endpoint = config
+        .syara
+        .as_ref()
+        .and_then(|s| s.llm_endpoint.as_deref())
+        .map(String::from)
+        .or_else(|| std::env::var("LCS_LLM_ENDPOINT").ok())
+        .unwrap_or_else(|| "http://localhost:1234/v1/chat/completions".to_owned());
+    let model = config
+        .syara
+        .as_ref()
+        .and_then(|s| s.llm_model.as_deref())
+        .map(String::from)
+        .or_else(|| std::env::var("LCS_LLM_MODEL").ok())
+        .unwrap_or_else(|| "local-model".to_owned());
+
+    // Unlike the ORT-backed matchers, the LLM evaluator surfaces HTTP errors
+    // as `Err` at scan time rather than panicking at construction. No
+    // panic-hook dance needed — the existing SYARA-X scan loop logs evaluator
+    // errors as warnings and rules simply don't match when the endpoint is
+    // unreachable.
+    let evaluator = OpenAiChatEvaluator::new(&endpoint, &model);
+    rules.register_llm_evaluator("openai-api-compatible", Box::new(evaluator));
+    tracing::info!(
+        endpoint,
+        model,
+        "registered LLM evaluator (OpenAI-compatible)"
+    );
 }
 
 impl Engine for SyaraEngine {

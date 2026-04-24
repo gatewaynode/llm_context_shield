@@ -38,7 +38,7 @@ syara-classifier = ["syara-sbert", "syara-x/classifier-onnx"]
 # HTTP-endpoint LLM evaluator (OpenAI-compatible: LM Studio, Ollama shim, etc.).
 syara-llm = ["syara", "syara-x/llm"]
 # Meta-feature enabling the tests/semantic_rules.rs integration binary.
-semantic-integration = ["syara-sbert"]
+semantic-integration = ["syara-sbert", "syara-llm"]
 
 [dev-dependencies]
 assert_cmd = "2"

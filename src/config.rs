@@ -35,7 +35,10 @@ pub struct RulesConfig {
 /// SYARA engine semantic matcher configuration.
 #[derive(Deserialize, Default)]
 pub struct SyaraConfig {
-    pub ollama_url: Option<String>,
+    /// OpenAI-compatible LLM endpoint for `llm:` rules (LMStudio, OpenAI proper,
+    /// vLLM, Ollama's `/v1` shim, etc.). Used when the `syara-llm` feature is
+    /// enabled. Default: `http://localhost:1234/v1/chat/completions` (LMStudio).
+    pub llm_endpoint: Option<String>,
     pub embed_model: Option<String>,
     pub llm_model: Option<String>,
     /// Path to the directory containing `model.onnx` + `tokenizer.json` for the
@@ -201,15 +204,20 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 # bundled = true
 
 [syara]
-# Ollama base URL for semantic matchers.
-# Default: http://localhost:11434
-# ollama_url = "http://localhost:11434"
+# OpenAI-compatible LLM endpoint for `llm:` rules (LMStudio, OpenAI proper,
+# vLLM, Ollama's `/v1` shim, etc.). Full path to the chat-completions endpoint.
+# Default: http://localhost:1234/v1/chat/completions (LMStudio default)
+# llm_endpoint = "http://localhost:1234/v1/chat/completions"
 
 # Model name for embedding-based matchers (sbert, classifier).
 # embed_model = "all-minilm"
 
-# Model name for LLM evaluator.
-# llm_model = "llama3.2"
+# Model name for LLM evaluator. Must match a model loaded in your endpoint.
+# Tested-known-good for the bundled LLM rules:
+#   "google/gemma-4-31b" (dense, strong YES/NO format discipline)
+#   "qwen/qwen3.6-35b-a3b" (MoE, faster inference per token)
+# See docs/semantic-rules.md for model selection guidance.
+# llm_model = "google/gemma-4-31b"
 
 # Directory containing model.onnx + tokenizer.json for the ONNX-local sbert
 # matcher (used when building with --features syara-sbert). The default path
