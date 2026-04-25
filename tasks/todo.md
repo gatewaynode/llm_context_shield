@@ -840,17 +840,43 @@ Define the types and storage for correlated match sets.
 
 Implement the logic that evaluates correlation rules against a set of findings.
 
-- [ ] Implement `CorrelationEngine::evaluate()` in `src/correlation.rs`:
-  - Input: `Vec<Finding>` (from all engines) + `Vec<CorrelationRule>`
-  - Output: `Vec<MatchCorrelation>` — correlated sets that fired
-  - **Ordered correlation**: finding A appears at a lower byte offset than finding B in the input
-  - **Proximity correlation**: finding A and finding B are within N bytes of each other
-  - **Combined correlation**: both finding A and finding B are present (regardless of position)
-  - **Cross-engine correlation**: finding from engine X + finding from engine Y (e.g., YARA string match + SYARA semantic match reinforce each other)
-- [ ] Wire into the scan pipeline: after `engine.run_scored()` returns findings, run correlation evaluation before building `ScanReport`
-- [ ] Add correlated findings to `ScanReport` — either as additional `Finding` entries with a `correlated: true` flag, or as a separate `correlations` field
-- [ ] Feed composite threat levels into `ThreatScoreboard` so correlations participate in threshold gating for subsequent rules
-- [ ] Unit tests: ordered pairs, proximity windowing, cross-engine combinations, no false correlations when conditions aren't met
+- [x] Implement `CorrelationEngine::evaluate()` in `src/correlation.rs`:
+  - Input: `&[EngineFindings]` (bucketed by engine name — preserves engine identity for `CrossEngine` and `engine_filter` resolution without widening `Finding`) + `&[CorrelationRule]`
+  - Output: `Vec<MatchCorrelation>` — one per satisfying pair (D9: multi-firing semantics)
+  - **Ordered correlation**: A.byte_range.0 < B.byte_range.0
+  - **Proximity correlation**: gap between byte ranges ≤ proximity_bytes (overlapping ranges count as gap=0)
+  - **Combined correlation**: both A and B present, no positional gating
+  - **Cross-engine correlation**: A and B come from distinct buckets (engine names differ)
+  - Pair-only in 11b (D8: rules with `match_refs.len() != 2` are skipped with a `tracing::warn!`); N-ary deferred.
+- [x] Wire into the scan pipeline: `Shield::scan` runs `engine.run_scored`, applies severity filter, wraps the surviving findings in a one-element bucket, and runs `CorrelationEngine::evaluate`.
+- [x] Add correlated findings to `ScanReport` — chose option (b) per plan D7: separate `correlations: Vec<MatchCorrelation>` field with `with_correlations()` setter and `has_correlations()` predicate. JSON shape change absorbed at v0.4.0 (pre-1.0).
+- [x] Feed composite threat levels into `ThreatScoreboard` so correlations participate in threshold gating for subsequent rules — for each fired correlation, `Shield::scan` calls `scoreboard.record(composite_threat_class, composite_threat_level)`. Threshold gating effect on subsequent rules is moot because correlations fire after engine scoring is complete; the score contribution shows up in the cumulative total and per-class accounting.
+- [x] Unit tests: ordered pairs, proximity windowing, cross-engine combinations, no false correlations when conditions aren't met — 9 evaluator tests in `src/correlation.rs::tests` + 3 wiring tests in `src/shield.rs::tests`.
+
+### Review (11b) — Correlation engine
+
+**Status: COMPLETE — 2026-04-25.**
+
+- **What landed:**
+  - `src/correlation.rs` extended with `EngineFindings` bucket type, `CorrelationEngine::evaluate(buckets, rules)`, and supporting helpers (`compile_rule_name_pattern`, `match_ref_matches`, `constraint_satisfied`, `byte_gap`). All four correlation flavours implemented per plan D5/D6/D8/D9.
+  - `src/scanner.rs` widens `ScanReport` with `correlations: Vec<MatchCorrelation>` plus `with_correlations()` and `has_correlations()`.
+  - `src/shield.rs` wires correlation into `Shield::scan` after severity filtering. Severity filter applies to findings *before* correlation evaluation — drops correlations whose contributing findings were filtered out. Composite scores feed `ThreatScoreboard` for accurate cumulative totals.
+  - `src/lib.rs` re-exports `CorrelationEngine`, `CorrelationRule`, `CorrelationType`, `EngineFindings`, `MatchCorrelation`, `MatchRef` at the crate root.
+- **Decisions resolved (carried from 11a):**
+  - **D2 (engine identity on `Finding`):** RESOLVED via D5 — bucketed evaluator input preserves engine identity at the call boundary; `Finding` shape unchanged. Cross-engine correlation has correct semantics (single-engine `Shield` wraps in one bucket; CrossEngine rules never fire there, which is correct, not a bug).
+  - **D3 (rule-name resolution):** RESOLVED — `MatchRef::rule_name_pattern` compiles as a regex against `Finding::description`. Invalid regex on the pattern is treated as never-match (with `tracing::warn!`) so authors don't get silent fires.
+  - **D4 (ScanReport shape):** RESOLVED — chose separate `correlations` field over synthetic `Finding`s; matches the JSON shape locked in 11a tests.
+- **Verification:**
+  - `cargo build --features yara,syara,syara-sbert,syara-llm` → clean.
+  - `cargo test --features yara,syara` → 222 lib + 50 yara + 4 syara_rules + 2 doc = **278 passed** (was 266 at end of 11a; +12 = 9 evaluator tests + 3 shield wiring tests).
+  - `cargo clippy --features yara,syara,syara-sbert,syara-classifier,syara-llm --all-targets -- -D warnings` → clean.
+- **Notable test design:** `Shield`-level wiring tests use a fixed-output custom engine (`FixedEngine`) rather than the simple engine. The first cut depended on the simple engine emitting ≥ 2 PI findings on a specific input string; that turned out to be brittle (the simple engine emits 1 PI for `"Ignore all previous instructions. Disregard the system prompt..."`). Driving with a custom engine makes the wiring test independent of rule-output drift as new bundled rules land.
+- **Carried forward:**
+  - Bundled correlation rules — 11c.
+  - CLI `--correlations` flag, `[correlation]` config section, JSON output formatting — 11d.
+  - Multi-engine `Shield` orchestration — future sub-phase. The correlation evaluator already accepts multiple buckets; the missing piece is `Shield` running multiple engines and aggregating their results.
+  - N-ary correlations — held until 11c authoring needs them.
+  - Widening `Finding` with engine identity or rule_name — held until evidence (likely 11c authoring) demands it.
 
 ### 11c — Bundled correlation rules
 

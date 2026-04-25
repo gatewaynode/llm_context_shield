@@ -3,6 +3,7 @@ use std::ops::Range;
 
 use serde::Serialize;
 
+use crate::correlation::MatchCorrelation;
 use crate::scoring::ThreatScoreboard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -139,6 +140,9 @@ pub struct ScanReport {
     /// Threat scores accumulated during scanning. `None` when the engine does
     /// not implement scoring (e.g. custom engines via the default `run_scored`).
     pub scores: Option<ThreatScoreboard>,
+    /// Cross-rule and cross-engine correlations fired during this scan.
+    /// Empty when no correlation rules are configured or none matched.
+    pub correlations: Vec<MatchCorrelation>,
 }
 
 impl ScanReport {
@@ -146,6 +150,7 @@ impl ScanReport {
         Self {
             findings,
             scores: None,
+            correlations: Vec::new(),
         }
     }
 
@@ -154,12 +159,24 @@ impl ScanReport {
         Self {
             findings,
             scores: if scores.is_empty() { None } else { Some(scores) },
+            correlations: Vec::new(),
         }
+    }
+
+    /// Attach correlation results to an existing report.
+    pub fn with_correlations(mut self, correlations: Vec<MatchCorrelation>) -> Self {
+        self.correlations = correlations;
+        self
     }
 
     /// Returns `true` when no findings are present.
     pub fn is_clean(&self) -> bool {
         self.findings.is_empty()
+    }
+
+    /// Returns `true` when at least one correlation fired.
+    pub fn has_correlations(&self) -> bool {
+        !self.correlations.is_empty()
     }
 }
 

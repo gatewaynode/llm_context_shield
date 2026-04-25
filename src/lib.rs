@@ -33,6 +33,10 @@ pub mod scanners;
 pub mod scoring;
 pub mod shield;
 
+pub use correlation::{
+    CorrelationEngine, CorrelationRule, CorrelationType, EngineFindings, MatchCorrelation,
+    MatchRef,
+};
 pub use engines::Engine;
 pub use scanner::{Category, Finding, ScanReport, Severity};
 pub use scoring::ThreatScoreboard;
