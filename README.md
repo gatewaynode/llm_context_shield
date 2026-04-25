@@ -298,6 +298,8 @@ Checksums are written to `target/release-manifest.txt`.
 
 ## Roadmap
 
+See [PRD.md](PRD.md) for the full vision, use-case catalog, and embedding contracts. The phase-level checklist below is a snapshot; [tasks/todo.md](tasks/todo.md) is authoritative.
+
 ### ~~Phase 5 — Cross-platform release builds~~ (done)
 
 ### ~~Phase 6 — Library crate~~ (done)

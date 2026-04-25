@@ -24,8 +24,9 @@ See `tasks/ARCHITECTURE.md` for full design and diagrams.
 - **Phase 9** — Threshold-gated behavioral rules (9a–9e): hypothetical scenarios, ICL exploitation, persuasion, refusal bypass, in-session protocol — all require Phase 7 accumulator gating
 - **Phase 10** — SYARA-only semantic rules (10a–10f): multilingual, paraphrastic, padding, compositional, coercion, infra
 - **Phase 11** — Cross-rule correlation (11a–11d): lives in the orchestrator because it needs cross-engine visibility
-- **Phase 12** — Session-aware scanning (12a–12d): `Shield::scan_with_session()`, in-memory + SQLite backends
-- **Phase 13** — Confidence calibration / ensemble scoring (13a–13d): noisy-OR combiner across all evidence types
+- **Phase 12** — Session-aware scanning (12a–12d): `Shield::scan_with_session()`, in-memory + embedded `redb` + decoupled Redis backends along a scaling axis — *temporal* per-session state (UC-5: WAF/gateway)
+- **Phase 13** — Scan groups (13a–13c): `Shield::scan_group()`, orderless multi-input correlation (UC-3: multi-file batch)
+- **Phase 14** — Confidence calibration / ensemble scoring (14a–14d): noisy-OR combiner across all evidence types
 
 ### Parallel SYARA-X wishlist (user is working on this next)
 
@@ -966,83 +967,174 @@ Ship default correlation rules that detect known multi-step attack patterns.
 
 ## Phase 12: Session-aware scanning
 
-Add optional per-session state to detect multi-turn attack patterns — crescendo attacks (taxonomy §8.1), gradual steering (§8.1), and in-session protocol accumulation (§8.3). The session module lives in `llm_context_shield` as the orchestrator, not in the engine libraries, because it requires cross-scan memory that individual engines shouldn't own.
+Add optional *temporal* per-session state to detect multi-turn attack patterns — crescendo attacks (taxonomy §8.1), gradual steering (§8.1), and in-session protocol accumulation (§8.3). The session module lives in `llm_context_shield` as the orchestrator, not in the engine libraries, because it requires cross-scan memory that individual engines shouldn't own.
 
 The core single-scan architecture remains stateless and fast. Session awareness is strictly opt-in and adds a second analysis pass on top of the existing pipeline.
+
+**Scope boundary.** Phase 12 covers *temporal* per-session state — ordered scan history with crescendo / frequency / spread / spike detection. *Orderless* multi-input correlation (multi-file batch, prompt-history snapshot review) is **Phase 13: Scan groups** — a sibling feature that shares no implementation with sessions. Use Phase 12 when the inputs come from the same caller-identified session over time (e.g. a chatbot user, a gateway client). Use Phase 13 when the inputs are a one-shot snapshot of related material (e.g. all `.md` files in a PR diff). See [PRD.md](../PRD.md) UC-4 and UC-5 for the use-case framing.
+
+**Backend posture.** The trait shape is designed for out-of-process backends from day one (Redis, SQLite, PostgreSQL) even though Phase 12a only ships `InMemorySessionStore`. Trait shape changes after operators are integrating against it are unacceptable; the time to design for multi-process is now, not after the in-memory implementation has shipped and locked in a `&mut self` API.
 
 ### 12a — Session store abstraction
 
 - [ ] Design `SessionStore` trait in `src/session.rs` (new module):
-  - `record_scan(session_id, ScanSummary)` — store the summary of a completed scan
-  - `get_history(session_id, window: usize) -> Vec<ScanSummary>` — retrieve the last N scan summaries for a session
-  - `clear(session_id)` — remove session state
-  - `expire(max_age: Duration)` — remove sessions older than max_age
-- [ ] Design `ScanSummary` struct — lightweight summary stored per scan:
-  - Timestamp
-  - Categories detected (set of `Category`)
-  - Threat classes detected (set of `String`)
-  - Cumulative threat score
-  - Number of findings per severity
-  - Does NOT store full input text or finding details (privacy + memory)
-- [ ] Implement `InMemorySessionStore` — `HashMap<String, VecDeque<ScanSummary>>` with configurable max window size
-- [ ] Add `pub mod session` to `src/lib.rs`
-- [ ] Unit tests for store CRUD, window sizing, expiry
+  - **Trait bounds**: `pub trait SessionStore: Send + Sync` — required for multi-threaded embeddings (a single `Shield` instance scanning concurrent requests in a server) and for the `Shield` to remain `Send + Sync`.
+  - **Method receiver**: all methods take `&self`. Backends with mutable internals (the in-memory `HashMap`, a connection pool) wrap the mutability behind interior-mutability primitives (`Mutex`, `RwLock`) or backend-native pools. This keeps the API ergonomic for shared `Arc<dyn SessionStore>` use across threads.
+  - **`session_id: &str`** — opaque to the trait. The caller defines what a session means (per-user ID, per-API-key, per-conversation UUID, per-tab cookie). Phase 12 makes no normalisation assumptions and stores the raw bytes the caller provides.
+  - Methods:
+    - `record_scan(&self, session_id: &str, summary: ScanSummary) -> Result<(), SessionError>`
+    - `get_history(&self, session_id: &str, window: usize) -> Result<Vec<ScanSummary>, SessionError>`
+    - `clear(&self, session_id: &str) -> Result<(), SessionError>`
+    - `expire(&self, max_age: Duration) -> Result<usize, SessionError>` — returns number of sessions purged
+  - **`SessionError`**: enum with variants for backend-specific errors (`StoreUnavailable`, `EncodingError`, `Other(String)`). Returning `Result` from day one means Redis/network backends don't need an API change later.
+- [ ] Design `ScanSummary` struct — privacy-safe metadata only:
+  - `timestamp: SystemTime` — `SystemTime` not `Instant` so it survives serialisation when backends store on disk or over the wire.
+  - `categories: BTreeSet<Category>` — categories detected in this scan (presence set, no counts).
+  - `threat_classes: BTreeSet<String>` — threat classes detected (presence set).
+  - `cumulative_score: i32` — the `ThreatScoreboard::cumulative_score()` value at end of scan.
+  - `severity_histogram: [u32; 4]` — counts indexed by `Low/Medium/High/Critical`. Fixed-size, copyable, cheap.
+  - **Explicitly NOT stored**: input text, finding descriptions, matched substrings, byte ranges. This is a hard privacy boundary — operators embedding the scanner in a WAF or gateway must be able to enable session tracking without paying a privacy or memory tax for retaining content.
+  - `Serialize` + `Deserialize` derives — required for any backend that persists across processes.
+- [ ] Implement `InMemorySessionStore`:
+  - Internal type: `Mutex<HashMap<String, VecDeque<ScanSummary>>>`.
+  - Constructor: `InMemorySessionStore::with_capacity(max_window: usize, max_sessions: usize)` — bounds both per-session window and total session count to prevent unbounded memory growth.
+  - Eviction: on `record_scan`, if `max_sessions` is exceeded, evict the session with the oldest most-recent activity (LRU-on-write, cheap to implement with the existing `VecDeque` timestamps).
+  - `expire(max_age)` — walks all sessions, drops those whose newest summary is older than `max_age`, returns count.
+- [ ] Add `pub mod session;` to `src/lib.rs`. Re-export `SessionStore`, `ScanSummary`, `SessionError`, `InMemorySessionStore` from the crate root.
+- [ ] Unit tests:
+  - CRUD round-trip on `InMemorySessionStore`.
+  - Window sizing — `get_history(id, 5)` returns at most 5 even when more are stored.
+  - Per-session window bound — recording 100 summaries with `max_window=10` retains only the last 10.
+  - `max_sessions` LRU eviction.
+  - `expire(Duration::from_secs(60))` correctly purges old sessions only.
+  - Concurrency smoke test — spawn N threads each calling `record_scan` on the same store; assert no panics, no data loss within the window bound. Validates `Send + Sync` shape.
+  - Serialisation round-trip on `ScanSummary` — `serde_json` to a string and back, confirm field equality. Validates the future-backend contract.
+- [ ] **Non-goals for 12a**: no async API surface, no Redis/SQLite implementations, no CLI surface, no `Shield::scan_with_session` wiring.
 
 ### 12b — Session analysis rules
 
-Define the rules that operate on session history rather than individual scan content.
+Rules that operate on session history rather than individual scan content. Severity-filter ordering carries forward from Phase 11 — session rules see the same filtered findings the user sees.
 
-- [ ] Design `SessionRule` struct:
-  - `pattern`: what to look for across the session window — e.g., "threat_score monotonically increasing", "category X appeared N+ times", "new category introduced in each scan"
-  - `window`: number of prior scans to consider
-  - `threshold`: minimum session-level score to trigger
-  - `threat_level`, `threat_class`: scoring metadata
-- [ ] Implement `SessionAnalyzer::evaluate()`:
-  - Input: current `ScanReport` + session history from `SessionStore`
-  - Output: `Vec<SessionFinding>` — session-level findings
-  - **Crescendo detection**: threat scores across the window are monotonically increasing or accelerating
-  - **Frequency detection**: the same threat class has fired in N of the last M scans
-  - **Category spread detection**: each successive scan introduces a new attack category (probing for weak spots)
-  - **Spike detection**: current scan score is >2x the session average (sudden escalation after benign probing)
-- [ ] Wire into the scan pipeline: after single-scan results, optionally run session analysis if a session_id is provided
-- [ ] Add session findings to `ScanReport` as a separate `session_findings` field
-- [ ] Unit tests with synthetic session histories
+- [ ] Design `SessionRule` struct (declarative shape, no free-form pattern strings):
+  - `name: String` — rule identifier for output.
+  - `pattern: SessionPattern` — what to detect (enum, see below).
+  - `window: usize` — number of prior scans to consider.
+  - `threshold: i32` — minimum session-level score to trigger.
+  - `threat_level: i32`, `threat_class: String` — scoring metadata, mirrors `CorrelationRule`.
+- [ ] Design `SessionPattern` enum:
+  - `Crescendo { min_increases: usize }` — `cumulative_score` is monotonically increasing across at least `min_increases` consecutive summaries (or accelerating; decide in plan-mode).
+  - `FrequencyOfClass { threat_class: String, n: usize, m: usize }` — `threat_class` appears in `n` of the last `m` summaries.
+  - `CategorySpread { min_distinct_categories: usize }` — at least N distinct categories appear across the window (probing-for-weak-spots).
+  - `Spike { multiplier: f32 }` — current scan's `cumulative_score` is ≥ `multiplier` × session average.
+- [ ] Implement `SessionAnalyzer::evaluate(&self, current: &ScanReport, history: &[ScanSummary], rules: &[SessionRule]) -> Vec<SessionFinding>`:
+  - One `SessionFinding` per fired rule (mirrors `MatchCorrelation` shape: rule metadata + which summaries contributed).
+  - Pure function — no I/O, easy to unit-test with synthetic histories.
+- [ ] Add `session_findings: Vec<SessionFinding>` to `ScanReport` (separate field, mirroring how Phase 11 added `correlations`).
+- [ ] Bundled session rules: ship 2-3 default rules covering the most obvious patterns (crescendo on `prompt_hijack`, frequency on `social_engineering`, spike on cumulative). Pattern mirrors Phase 11c's bundled correlation catalog.
+- [ ] Unit tests with synthetic session histories — at minimum one positive + one negative per `SessionPattern` variant.
 
 ### 12c — Session API surface
 
 Expose session scanning to both library and CLI consumers.
 
 - [ ] Extend `Shield` builder API:
-  - `.session_store(store)` — attach a session store
-  - `.scan_with_session(text, session_id)` — scan + record + analyze session
+  - `.session_store(store: Arc<dyn SessionStore>)` — attach a session store. `Arc` not `Box` so the same store can be shared across multiple `Shield` instances (a real concern for server embeddings; one engine config per route, one session store across all of them).
+  - `.session_rules(rules: Vec<SessionRule>)` — additive over bundled, mirroring Phase 11d's `.correlation_rules` semantics.
+  - `.disable_session_analysis()` — opt-out for callers who only want session *recording* without the analysis pass.
+- [ ] Extend `Shield` scan API:
+  - `Shield::scan_with_session(&self, session_id: &str, input: &str) -> ScanReport` — scan + record summary + run session analysis. `session_id` first to match `record_scan` argument ordering.
+  - Error handling: if no session store is attached, return `ScanReport` with `session_findings = vec![]` and a `tracing::warn!`. (Don't panic — calling `scan_with_session` on a Shield without a store is a misconfiguration, not a programming bug; the existing scan still produces meaningful output.)
 - [ ] Extend CLI:
-  - `--session-id <id>` flag on `lcs scan` — enables session tracking for this scan
-  - `--session-window <N>` — how many prior scans to consider (default 10)
-  - `--session-store <path>` — optional SQLite-backed persistent store (future, initially in-memory only)
-- [ ] JSON output: include `"session"` key with session findings and history summary when session_id is provided
+  - `--session-id <ID>` flag on `lcs scan` — enables session tracking for this scan. Without `--session-id`, behaviour is identical to today.
+  - `--session-window <N>` — override the per-session window for this scan (default from `[session] default_window`).
+  - **Out of scope for 12c**: `--session-store <path>` — that's 12d (with the SQLite/Redis backends).
+- [ ] JSON output: top-level `"session_findings"` key emitted whenever non-empty, mirroring Phase 11d's `"correlations"` shape.
+- [ ] Text output: `--session` flag (mirroring `--correlations` and `--threat-scores`) gates the per-session-finding detail block on stderr. Summary line always includes count when session findings fired.
 - [ ] Add `[session]` section to `Config` / `DEFAULT_CONFIG`:
-  - `enabled`: bool (default false)
-  - `default_window`: integer (default 10)
-  - `max_sessions`: integer — cap on concurrent tracked sessions to prevent memory growth
-  - `expiry_seconds`: integer — auto-expire idle sessions
-- [ ] Integration tests: multi-scan sequences that simulate crescendo attacks
+  - `enabled: bool` (default `false` — session tracking is opt-in even when a session_id is provided).
+  - `default_window: usize` (default 10).
+  - `max_sessions: usize` (default 1000 — caps in-memory store; backends may ignore).
+  - `expiry_seconds: u64` (default 3600 — auto-expire idle sessions).
+  - `custom_rules: Option<String>` (path to TOML file with custom `SessionRule` definitions, mirroring `[correlation] custom_rules`).
+- [ ] Integration tests: multi-scan sequences in `tests/integration.rs` that simulate a crescendo attack and a frequency attack, verifying both library and CLI surfaces produce the expected session findings. Use `InMemorySessionStore` directly (no on-disk backend yet).
+- [ ] Documentation: new `docs/session-scanning.md` covering session_id semantics (caller-defined opacity), the four bundled patterns, custom-rule TOML format, store choice guidance (in-memory for single-process, deferred backends for multi-process).
 
-### 12d — Pluggable session backends (future-proofing)
+### 12d — Pluggable session backends
 
-- [ ] Define the `SessionStore` trait such that external backends (Redis, SQLite, PostgreSQL) can implement it
-- [ ] Implement `SqliteSessionStore` — persistent session state for service deployments
-- [ ] Document the `SessionStore` trait in `docs/session-scanning.md` for users who want custom backends
-- [ ] Gate SQLite backend behind an optional feature flag (`session-sqlite`)
+Two backends ship in 12d, positioned as a **scaling axis** rather than alternatives. Operators start embedded (single binary, no infrastructure) and switch to decoupled (shared Redis) when load or multi-host deployment demands it. The switch is a config change (`[session] backend = "redb" | "redis"`), not a code change — both backends implement the same `SessionStore` trait.
+
+- [ ] Confirm `SessionStore` trait shape held up under real backend implementation pressure. If not, fix the trait *before* shipping a second backend.
+- [ ] Implement `RedbSessionStore` — embedded persistent session state for single-process deployments. Use `redb` (pure-Rust, MVCC, no FFI, well-maintained). Schema: a single multimap table keyed on `session_id` with `(timestamp, ScanSummary)` entries; `redb`'s ordered iteration serves the time-windowed `get_history` naturally. `expire(max_age)` walks all sessions in a write transaction.
+  - Gate behind feature flag `session-redb`.
+  - Construction: `RedbSessionStore::open(path: impl AsRef<Path>) -> Result<Self, SessionError>`.
+- [ ] Implement `RedisSessionStore` — decoupled persistent session state for multi-host service deployments. Use the `redis` crate (`redis = "0.x"`; confirm version under CLAUDE.md's N-1 dependency rule at plan-mode time). Use a `LIST` per session (`LPUSH` on record, `LRANGE` on history, `EXPIRE` for TTL). Connection management: `r2d2` or `redis::Client::get_connection_with_timeout` pooled behind a `Mutex`/`RwLock` inside the store; the store presents the same `&self` interior-mutability shape as `InMemorySessionStore`.
+  - Gate behind feature flag `session-redis`.
+  - Construction: `RedisSessionStore::connect(url: &str) -> Result<Self, SessionError>`.
+  - Why the `redis` crate over `redis-protocol`: `redis-protocol` is just the RESP codec — using it directly means owning connection management, pooling, retry, and command building. The `redis` crate gives all of that and is well-maintained. `fred` is a future-async option; deferred unless an async wrapper trait lands.
+  - Why not `sled`: similar embedded-KV shape but development is widely treated as paused (long-stalled 1.0 beta), which conflicts with CLAUDE.md's conservative dependency stance. `redb` covers the same use case with active maintenance.
+- [ ] Wire backend selection through `[session]` config: `backend = "memory" | "redb" | "redis"` (default `"memory"`), plus backend-specific fields (`redb_path`, `redis_url`). `Shield::builder().build()` resolves the config to construct the appropriate `Arc<dyn SessionStore>`.
+- [ ] Document both backends in `docs/session-scanning.md` — connection-string format, feature flag, eviction semantics, operational concerns (Redis `MEMORY` / `maxmemory-policy`, redb on-disk file growth + `compact()`).
+- [ ] Migration story: include a short "starting embedded, growing decoupled" section in `docs/session-scanning.md` covering how to drain and migrate sessions from `redb` to Redis without losing in-flight history. (Phase-13-style scope cap: a manual one-shot migration, not a live replication shim.)
+- [ ] Acknowledge in the document that an HTTP / MCP front end (a future, unscheduled phase — see [PRD.md](../PRD.md) §6.4) will use the Redis backend to share session state across processes. This is the load-bearing reason 12a designed the trait for out-of-process backends.
 
 ---
 
-## Phase 13: Confidence calibration and ensemble scoring
+## Phase 13: Scan groups
+
+Add a one-shot, *orderless* multi-input scanning surface. A scan group is a related set of inputs (multi-file batch, prompt-history snapshot, ingested document corpus) processed in a single invocation. The group has no temporal semantics — there is no "first" or "last" input, no crescendo, no expiry. The output is per-input results plus group-level aggregations: combined threat scoreboard, cross-input correlations, worst-offender summary.
+
+**Scope boundary.** Phase 13 covers *orderless snapshots*. *Temporal sessions* (per-user state across requests, crescendo detection) are **Phase 12** — a sibling feature with no shared implementation. See [PRD.md](../PRD.md) UC-3 and UC-4 for the use-case framing.
+
+Phase 13 is intentionally smaller than Phase 12 — it reuses the existing single-scan and correlation infrastructure rather than introducing new abstractions. The novel surface is the input-collection type, the group-level report, and the choice to bucket per-input findings into the existing correlation evaluator (which already accepts `&[EngineFindings]`) so cross-input correlation falls out for free.
+
+### 13a — `ScanGroup` and `GroupReport` types
+
+- [ ] Create new module `src/scan_group.rs`:
+  - `pub struct ScanGroup` — collection of `(label: String, input: String)` pairs. Builder-ish API: `ScanGroup::new()`, `.add(label, input)`, `.add_file(path) -> io::Result<()>` convenience.
+  - `pub struct GroupReport`:
+    - `per_input: Vec<(String, ScanReport)>` — per-input results, label-keyed.
+    - `aggregate_scoreboard: ThreatScoreboard` — class scores summed across all inputs.
+    - `cross_input_correlations: Vec<MatchCorrelation>` — correlations that fired across distinct inputs (each input becomes a separate `EngineFindings` bucket; the existing `CorrelationEngine::evaluate` does the rest).
+    - `summary: GroupSummary` — high-level aggregates (total findings, distinct threat classes, worst-offender input by cumulative score).
+- [ ] Extend `Shield`:
+  - `Shield::scan_group(&self, group: &ScanGroup) -> GroupReport` — scans each input via the existing `scan()` path, collects per-input reports, runs cross-input correlation, builds aggregates.
+  - The cross-input correlation step bundles each input's findings as a labelled `EngineFindings` bucket with a synthetic engine name (`"input:<label>"`). Same correlation rules that fire across engines today fire across inputs in this mode.
+- [ ] Add `pub mod scan_group;` to `src/lib.rs` and re-export `ScanGroup`, `GroupReport`, `GroupSummary`.
+- [ ] Unit tests:
+  - Empty group → empty report.
+  - Single-input group → behaves like `Shield::scan` wrapped in a group.
+  - Multi-input group with one bad + one clean input → per-input distinguishes correctly, aggregate scoreboard reflects only the bad one.
+  - Multi-input group where two inputs each contain one half of a `sandwich_attack` pair → cross-input correlation fires (delimiter manipulation in input A + prompt injection in input B).
+
+### 13b — CLI surface
+
+- [ ] Add `--group` flag (or `lcs scan-group` subcommand — decide in plan-mode for 13b based on which composes better with shell glob expansion). Accepts multiple file paths.
+- [ ] Output formats:
+  - `text`: per-input summary block (label + finding count + worst severity), then aggregate scoreboard, then cross-input correlations under `--correlations`.
+  - `json`: top-level `"per_input": [{"label": "...", "report": {...}}, ...]`, `"aggregate_scoreboard": {...}`, `"cross_input_correlations": [...]`, `"summary": {...}`.
+  - `quiet`: exit code only — `0` if every input is clean, `1` if any input has findings or any cross-input correlation fires, `2` on error.
+- [ ] Add `[scan_group]` section to `Config` / `DEFAULT_CONFIG`:
+  - `enable_cross_input_correlation: bool` (default `true`).
+  - `max_inputs: usize` (default 1000 — guardrail against unintended directory-recursion blow-ups).
+- [ ] Integration tests: multi-file fixtures in `tests/`, both clean-batch and mixed-batch cases.
+
+### 13c — Library docs and example
+
+- [ ] New `examples/batch_scan.rs` showing `ScanGroup` construction from a directory of files, `Shield::scan_group` invocation, and printing the `GroupReport`.
+- [ ] Extend `docs/rule-authoring.md` with a short note that the existing `CrossEngine` correlation type doubles as cross-input correlation in scan-group mode.
+- [ ] Update README "Library Usage" section with a 5-line `Shield::scan_group` snippet.
+
+**Non-goals for Phase 13**: no persistence (a group is a one-shot in-memory aggregation), no cross-process state (use Phase 12 sessions for that), no temporal rules (the order of inputs in a group is meaningless), no `Shield::builder().scan_groups_enabled` flag (the feature is always available; the cost is paid only when `scan_group` is called).
+
+---
+
+## Phase 14: Confidence calibration and ensemble scoring
 
 Replace the current integer-accumulator threat scoring with calibrated probability estimates that combine evidence from string matches, semantic similarity, LLM verdicts, correlation findings, and session analysis into a unified confidence score. This is the orchestrator's job because it combines signals from multiple engines and analysis layers that no single engine can see.
 
 Phase 7's `ThreatScoreboard` continues to work as-is for integer-based threshold gating. This phase adds a parallel probability-based scoring track that sits on top.
 
-### 13a — Confidence model
+### 14a — Confidence model
 
 - [ ] Design `ConfidenceScore` struct in `src/confidence.rs` (new module):
   - `probability`: f64 (0.0–1.0) — calibrated probability that the input contains the indicated threat
@@ -1052,7 +1144,7 @@ Phase 7's `ThreatScoreboard` continues to work as-is for integer-based threshold
 - [ ] Add `pub mod confidence` to `src/lib.rs`
 - [ ] Unit tests for score construction and display
 
-### 13b — Calibration functions
+### 14b — Calibration functions
 
 Map raw scores from each evidence type to calibrated probabilities.
 
@@ -1069,7 +1161,7 @@ Map raw scores from each evidence type to calibrated probabilities.
 - [ ] Provide a `lcs calibrate` subcommand (future) that accepts a labeled dataset and outputs tuned parameters
 - [ ] Unit tests: verify calibration curves are monotonic, boundary values are correct, default parameters produce reasonable outputs
 
-### 13c — Ensemble combiner
+### 14c — Ensemble combiner
 
 Combine calibrated evidence into per-class and overall threat probabilities.
 
@@ -1084,7 +1176,7 @@ Combine calibrated evidence into per-class and overall threat probabilities.
 - [ ] Decision thresholds: configurable in `[confidence]` config — `flag_threshold` (default 0.5), `block_threshold` (default 0.9) — allows consumers to make risk-appropriate decisions
 - [ ] Unit tests: noisy-OR arithmetic, weight scaling, independence assumption verification, degenerate cases (no evidence, single evidence, conflicting evidence)
 
-### 13d — Output and API surface
+### 14d — Output and API surface
 
 - [ ] JSON output: include `"confidence"` key with per-class and overall probabilities, evidence audit trail
 - [ ] Text output: one-line confidence summary — `"Threat confidence: prompt_hijack=0.92, social_engineering=0.34, overall=0.94"`
@@ -1093,7 +1185,7 @@ Combine calibrated evidence into per-class and overall threat probabilities.
 - [ ] Document confidence scoring in `docs/confidence-scoring.md` — what the numbers mean, how to tune thresholds for different use cases (high-security vs. user-facing), how to provide calibration data
 - [ ] Update `docs/rule-authoring.md` — explain how rule threat_level values feed into the calibration pipeline
 
-### Future (out of scope for Phase 11–13)
+### Future (out of scope for Phase 11–14)
 
 - **Online calibration** — update calibration parameters in real-time as labeled feedback arrives; requires a feedback loop API
 - **Per-deployment calibration profiles** — different calibration curves for different deployment contexts (chatbot vs. RAG pipeline vs. agent system)
