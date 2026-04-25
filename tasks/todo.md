@@ -882,16 +882,42 @@ Implement the logic that evaluates correlation rules against a set of findings.
 
 Ship default correlation rules that detect known multi-step attack patterns.
 
-- [ ] Define correlation rule file format — TOML or inline in existing rule files (decide which fits better)
-- [ ] Bundled correlation rules:
+- [x] Define correlation rule file format — TOML or inline in existing rule files (decide which fits better)
+- [x] Bundled correlation rules:
   - **Sandwich attack**: delimiter manipulation finding + prompt injection finding within 500 bytes — the attacker faked a boundary then injected
   - **Setup-payload**: context shift / hypothetical scenario finding followed by instruction override or jailbreak finding — the attacker established a fictional frame then exploited it
   - **Encode-and-inject**: hidden content / encoding finding proximate to prompt injection finding — the attacker encoded a payload
   - **Multi-engine reinforcement**: YARA string match + SYARA semantic match on same threat class — independent evidence types agree, boost confidence
   - **Probe-then-extract**: secret probing finding followed by data exfiltration finding — the attacker confirmed the secret exists then tried to extract it
-- [ ] Assign composite_threat_level values that exceed any individual rule (these are high-confidence compound signals)
-- [ ] Unit tests for each bundled correlation with crafted payloads
-- [ ] FP tests: verify individual matches without the correlation constraint do NOT produce a correlation finding
+- [x] Assign composite_threat_level values that exceed any individual rule (these are high-confidence compound signals)
+- [x] Unit tests for each bundled correlation with crafted payloads
+- [x] FP tests: verify individual matches without the correlation constraint do NOT produce a correlation finding
+
+#### Review (11c)
+
+- **Format chosen**: hard-coded `Vec<CorrelationRule>` returned by `correlation::bundled::bundled_rules()`. TOML/config-loaded rules deferred to 11d per the existing `[correlation]` plan. The bundled file is a Rust source file (not a separate data format) so the catalog stays type-checked and refactor-safe.
+- **Opt-in surface**: callers do `Shield::builder().correlation_rules(bundled_rules()).build()`. No new builder method — 11d will drive default-on behaviour through its `enabled` config flag. This keeps 11c API surface zero-cost.
+- **File layout**: `src/correlation.rs` → `src/correlation/mod.rs` (rename via `git mv`, history preserved) plus new `src/correlation/bundled.rs`. Each file stays well under the 500-LOC convention; rule catalog isolated from evaluator.
+- **Catalog shape**: 11 rules, not 5. Setup-payload split into two pair rules (CS→IO, CS→JB) per pair-only constraint (D8). Multi-engine corroboration expanded to one rule per high-severity category (PromptInjection, Jailbreak, InstructionOverride, DataExfiltration, RefusalSuppression, ResponseSteering — 6 rules) to give meaningful coverage when multi-engine `Shield` orchestration lands.
+- **Composite scoring**: max individual `threat_level` across YARA/SYARA bundled rules is 5; composites land at 6 (sandwich), 7 (setup-payload + encode-and-inject), 8 (probe-then-extract + every multi-engine corroboration). All composites strictly exceed every individual `threat_level`, satisfying the spec's "exceed any individual rule" requirement. A guard test asserts this invariant catalog-wide so a future low-threat rule can't slip in by accident.
+- **Edits**:
+  - `src/correlation.rs` → `src/correlation/mod.rs` (rename + 1-line `pub mod bundled;` + docstring tweak)
+  - `src/correlation/bundled.rs` (new — 11 rules + 19 unit tests)
+  - `src/lib.rs` (re-export `bundled_rules`)
+- **Verification**:
+  - `cargo build --features yara,syara,syara-sbert,syara-llm` → clean.
+  - `cargo test --features yara,syara` → **297/297 green** (241 lib + 50 yara + 4 syara_rules + 2 doc). Was 278 at end of 11b; +19 from 11c.
+  - `cargo clippy --features yara,syara,syara-sbert,syara-classifier,syara-llm --all-targets -- -D warnings` → clean.
+- **Test design notes**:
+  - Each non-CrossEngine rule has a positive test (synthetic findings satisfy the constraint → 1 correlation fires) and a paired FP test (single-ref present → 0 correlations).
+  - CrossEngine rules use a two-bucket `EngineFindings` fixture (`yara` + `syara`); all six fire symmetrically, producing two correlations per scan (D9).
+  - One shared CrossEngine FP test sweeps every CrossEngine rule against a single-bucket fixture to confirm none fire there — guards the forward-compat-only contract.
+  - One catalog-shape test (set-equality on rule names) and one threat-level invariant test (`composite > 5`) round out the module.
+- **Carried forward to 11d**:
+  - Wire `bundled_rules()` into the default Shield via the `[correlation]` config section (`enabled = true`).
+  - Add the `proximity_window` config knob if the hard-coded 500-byte windows in sandwich/encode-and-inject prove too tight or too loose in practice.
+  - Add `custom_rules` config path so users can extend the catalog without forking the crate.
+  - JSON/text output formatting for `report.correlations` (already populated, just unrendered).
 
 ### 11d — Correlation config and output
 

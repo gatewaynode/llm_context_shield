@@ -1,8 +1,10 @@
 //! Cross-rule and cross-engine correlation data model.
 //!
-//! Defines the carriers that the correlation engine (11b) populates and the
-//! declarative rules that drive it (11c). This module ships the types only;
-//! evaluation and scan-pipeline integration land in subsequent sub-phases.
+//! Defines the carriers populated by [`CorrelationEngine`] (11b) and the
+//! declarative rules that drive it. The bundled-rule catalog (11c) lives in
+//! the [`bundled`] submodule.
+
+pub mod bundled;
 
 use serde::Serialize;
 
