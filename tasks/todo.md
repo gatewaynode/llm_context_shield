@@ -808,17 +808,33 @@ Phase 7's `ThreatScoreboard` accumulates per-class scores, but operates at the c
 
 Define the types and storage for correlated match sets.
 
-- [ ] Design `MatchCorrelation` struct in `src/correlation.rs` (new module):
-  - Holds references to two or more `Finding` instances that form a correlated set
-  - `correlation_type`: enum — `Ordered` (A before B), `Proximate` (A within N bytes of B), `Combined` (A and B both present), `CrossEngine` (match from engine X + match from engine Y)
+- [x] Design `MatchCorrelation` struct in `src/correlation.rs` (new module):
+  - Holds owned `Finding` clones (not references — see plan D1) that form a correlated set
+  - `correlation_type`: enum — `Ordered` (A before B), `Proximate { proximity_bytes }` (A within N bytes of B), `Combined` (A and B both present), `CrossEngine` (match from engine X + match from engine Y)
   - `composite_threat_level`: i32 — the threat contributed by the correlation, distinct from individual finding threat levels
   - `explanation`: String — human-readable description of why the correlation matters
-- [ ] Design `CorrelationRule` struct — declarative correlation definitions:
-  - `match_refs`: list of (category, rule_name_pattern, optional engine filter) tuples specifying which findings to correlate
+- [x] Design `CorrelationRule` struct — declarative correlation definitions:
+  - `match_refs`: list of `MatchRef { category, rule_name_pattern, engine_filter }` specifying which findings to correlate (resolution semantics deferred to 11b)
   - `constraint`: the correlation type and parameters (ordering, proximity distance, etc.)
   - `composite_threat_level`, `composite_threat_class`: scoring metadata for the correlated set
-- [ ] Add `pub mod correlation` to `src/lib.rs`
-- [ ] Unit tests for data model construction and display
+- [x] Add `pub mod correlation` to `src/lib.rs`
+- [x] Unit tests for data model construction and display
+
+### Review (11a) — Correlation data model
+
+**Status: COMPLETE — 2026-04-25.**
+
+- **What landed:** new `src/correlation.rs` (~190 LOC including 5 unit tests) shipping `CorrelationType`, `MatchRef`, `CorrelationRule`, and `MatchCorrelation` plus a `MatchCorrelation::new(rule, findings)` constructor that copies rule metadata onto the fired correlation. `pub mod correlation;` added to `src/lib.rs`. No re-export at the crate root yet — 11b will decide that when wiring `ScanReport`.
+- **Decisions deferred to 11b** (load-bearing for the data model):
+  - Engine identity on `Finding` — `engine_filter: Option<String>` is declared on `MatchRef`, but how it resolves is 11b's call (thread engine identity through `evaluate()` vs widen `Finding`).
+  - Rule-name resolution — same shape, declared as `rule_name_pattern: Option<String>`; resolution against `Finding::description` vs propagating rule names through engine bridges is 11b's call.
+  - `ScanReport` shape — not modified in 11a.
+- **Verification:**
+  - `cargo build --features yara,syara,syara-sbert,syara-llm` → clean.
+  - `cargo test --features yara,syara` → 210 lib + 50 yara + 4 syara_rules + 2 doc = 266 passed (was 261 before; +5 correlation::tests as expected).
+  - `cargo clippy --features yara,syara,syara-sbert,syara-classifier,syara-llm --all-targets -- -D warnings` → clean.
+  - JSON serialization shape locked: `correlation_type` is `snake_case` for unit variants and externally-tagged for `Proximate` (one of the 5 unit tests asserts this — important because 11d's JSON output will rely on it; pinning the shape now keeps consumers stable).
+- **Carried forward:** the four design decisions above (D1–D4 in the plan) need to inform 11b's first edit. D1 (owned clones) is settled; D2/D3/D4 are intentional open holes.
 
 ### 11b — Correlation engine
 

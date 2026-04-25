@@ -20,6 +20,7 @@
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod config;
+pub mod correlation;
 pub mod engines;
 pub mod input;
 #[cfg(feature = "cli")]
