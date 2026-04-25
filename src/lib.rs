@@ -33,7 +33,8 @@ pub mod scanners;
 pub mod scoring;
 pub mod shield;
 
-pub use correlation::bundled::bundled_rules;
+pub use correlation::bundled::{bundled_rules, bundled_rules_with_window};
+pub use correlation::loader::load_custom_rules;
 pub use correlation::{
     CorrelationEngine, CorrelationRule, CorrelationType, EngineFindings, MatchCorrelation,
     MatchRef,

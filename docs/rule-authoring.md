@@ -218,3 +218,77 @@ The evaluator expects a strict `YES: ...` / `NO: ...` response format. Small or 
 - **Rule fires on benign input**: tighten the regex; add line anchors; require `N of them` instead of `any of them`.
 - **Rule never fires**: check you haven't shadowed it with `--disable`; enable `--log` and re-scan to see compile warnings.
 - **Symlinks are ignored**: intentional — drop real files, not symlinks. Symlinked rule files are skipped with a warning.
+
+## Custom correlation rules
+
+Correlation rules are evaluated *after* the engine produces findings. They link two findings into a higher-confidence compound signal — for example, a delimiter-manipulation finding paired with a prompt-injection finding within 500 bytes ("sandwich attack"). The bundled catalog ships 11 such rules; users can extend it by pointing the config at a TOML file.
+
+### Wiring a custom rule file
+
+In `~/.config/llm_context_shield/config.toml`:
+
+```toml
+[correlation]
+enabled = true
+proximity_window = 500
+custom_rules = "/path/to/correlation_rules.toml"
+```
+
+`enabled` and `proximity_window` are optional; `custom_rules` is the path to your rule file. Set `enabled = false` to skip both bundled and custom correlation entirely. `proximity_window` overrides the byte distance for the bundled `Proximate` rules (`sandwich_attack`, `encode_and_inject`); custom rules supply their own `proximity_bytes` per rule.
+
+### TOML format
+
+Each rule is one `[[rules]]` block with two `[[rules.match_refs]]` sub-blocks (the engine evaluates pairs only). Worked example:
+
+```toml
+[[rules]]
+name = "tight_sandwich"
+explanation = "Delim spoof + prompt injection within 200 bytes (tighter than bundled)."
+constraint_type = "proximate"
+proximity_bytes = 200
+composite_threat_level = 7
+composite_threat_class = "sandwich_attack"
+
+[[rules.match_refs]]
+category = "delimiter_manipulation"
+
+[[rules.match_refs]]
+category = "prompt_injection"
+```
+
+Required fields per rule:
+
+- `name` — unique identifier (string).
+- `explanation` — human-readable description rendered with `--correlations`.
+- `constraint_type` — one of `"ordered"`, `"proximate"`, `"combined"`, `"cross_engine"`.
+- `proximity_bytes` — required *iff* `constraint_type = "proximate"`; rejected otherwise.
+- `composite_threat_level` — integer; the level recorded in the threat scoreboard when this rule fires.
+- `composite_threat_class` — string class name for the scoreboard.
+- `match_refs` — exactly two; each must have a `category`. `rule_name_pattern` (regex against `Finding::description`) and `engine_filter` (engine name) are optional.
+
+### Constraint type semantics
+
+- `ordered` — the first ref's match must precede the second by byte offset. Use for attack chains where order matters (probe → extract).
+- `proximate` — both matches present within `proximity_bytes` of each other (any order).
+- `combined` — both matches present in the same scan, position-agnostic.
+- `cross_engine` — matches sourced from two distinct engines. Useful for "two engines independently flagged the same threat class" patterns. **Currently dormant**: the single-engine `Shield` puts everything in one bucket, so `cross_engine` rules ship as forward-compat for future multi-engine orchestration. They evaluate correctly when that lands.
+
+### Category names
+
+The `category` field is a snake-case string corresponding to the `Category` enum. Valid values: `prompt_injection`, `hidden_content`, `data_exfiltration`, `jailbreak`, `delimiter_manipulation`, `instruction_override`, `refusal_suppression`, `response_steering`, `secret_probing`, `context_shift`, `icl_exploitation`, `coercion`, `refusal_bypass`, `session_protocol`, `obfuscation`.
+
+### Validation and load failures
+
+The loader rejects:
+
+- TOML syntax errors.
+- Unknown `constraint_type` values.
+- `proximity_bytes` set on non-proximate constraints (or missing on proximate).
+- Rules with `match_refs.len() != 2`.
+- Unknown category names.
+
+If the configured `custom_rules` path is missing or malformed at Shield construction, a `tracing::warn!` is logged and the bundled catalog is still loaded. A scan will not fail because of a bad custom-rules file.
+
+### Composite scoring
+
+Composite levels should exceed the maximum individual `threat_level` of the contributing categories — that's the whole point of correlation. The bundled catalog uses 6–8 (max individual is 5). Reuse an existing `composite_threat_class` if your rule conceptually overlaps with a bundled one (e.g., a tighter sandwich variant should still use `sandwich_attack` as its class so the scoreboard aggregates it sensibly).

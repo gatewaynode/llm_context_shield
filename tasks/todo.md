@@ -921,14 +921,46 @@ Ship default correlation rules that detect known multi-step attack patterns.
 
 ### 11d — Correlation config and output
 
-- [ ] Add `[correlation]` section to `Config` / `DEFAULT_CONFIG`:
+- [x] Add `[correlation]` section to `Config` / `DEFAULT_CONFIG`:
   - `enabled`: bool (default true)
   - `proximity_window`: default byte distance for proximity correlations
   - `custom_rules`: optional path to user-defined correlation rule file
-- [ ] Include correlations in JSON output (`-f json`) — `"correlations"` key with match references, type, and composite score
-- [ ] Include correlations in text output — summary line showing correlated attack chains
-- [ ] Add `--correlations` flag to show detailed correlation information
-- [ ] Update `docs/rule-authoring.md` with correlation rule syntax and guidance
+- [x] Include correlations in JSON output (`-f json`) — `"correlations"` key with match references, type, and composite score
+- [x] Include correlations in text output — summary line showing correlated attack chains
+- [x] Add `--correlations` flag to show detailed correlation information
+- [x] Update `docs/rule-authoring.md` with correlation rule syntax and guidance
+
+#### Review (11d)
+
+- **Default-on bundled rules**: `Shield::builder()` now loads bundled rules automatically — no explicit `.correlation_rules(bundled_rules())` call required. Disable via `.disable_correlations()` (builder) or `[correlation] enabled = false` (config). Builder method overrides config; config overrides hard default of `true`.
+- **Additive `.correlation_rules(vec)` semantics**: previously replaced the rule list, now appends to bundled. The 11b/11c-era test `correlation_fires_when_rule_matches` was extended to assert both behaviours: a `.disable_correlations()` path (only user rule eligible, but disabled = zero), and an additive path (bundled `sandwich_attack` + user `sandwich` both fire on the same fixture). The renamed test `disabled_correlations_means_no_correlations` covers the disable wiring directly.
+- **`bundled_rules_with_window(usize)` constructor**: parameterised entry point; `bundled_rules()` is now a thin wrapper calling it with 500. The `proximity_window` config value propagates into `sandwich_attack` and `encode_and_inject` via the Shield builder (verified by `proximity_window_from_config_propagates_to_bundled_rules` — a 50-byte window correctly suppresses sandwich_attack on a 95-byte-gap fixture that fires under the 500-byte default).
+- **Custom rule TOML format**: flat shape with `constraint_type` plus optional `proximity_bytes` (D12). External tagging on the internal enum was awkward to express cleanly in TOML when mixed with unit variants; the loader translates between disk shape and internal `CorrelationType`. Validation is strict: unknown constraint types, unknown categories, mismatched `proximity_bytes`/`constraint_type` combinations, and `match_refs.len() != 2` all error. Bad files at Shield construction `tracing::warn!` and continue with bundled only — never fail the scan.
+- **JSON output**: top-level `"correlations": [...]` key emitted whenever `report.correlations` is non-empty, alongside `"threat_scores"`. Each entry uses the existing `MatchCorrelation::Serialize` impl unchanged (snake_case unit variants, externally-tagged `Proximate { proximity_bytes }`).
+- **Text output**: `--correlations` flag (mirroring `--threat-scores`) enables a per-correlation detail block on stderr (`[CORRELATION] {name} (level X, class Y)` + explanation + contributing findings). The stdout summary line always includes the count when correlations fired (`"3 threat(s) detected, 2 correlation(s)."`).
+- **Binary refactor**: `main.rs` now constructs a `Shield` and calls `shield.scan(input)` instead of going engine-direct. Eliminates parallel evaluation paths, lets the binary pick up correlations and severity-pre-filtering for free, and removes ~6 LOC of explicit findings/scoring plumbing. The `List` command keeps its direct `engines::build` call (it doesn't need a full Shield).
+- **Edits** (10 files):
+  - `src/config.rs` — `CorrelationConfig` struct, `Config::correlation` field, `[correlation]` block in `DEFAULT_CONFIG`
+  - `src/correlation/bundled.rs` — extract `bundled_rules_with_window`; `bundled_rules` becomes a wrapper; +1 test
+  - `src/correlation/loader.rs` (new) — flat-shape TOML loader with strict validation; +10 tests
+  - `src/correlation/mod.rs` — `pub mod loader;`
+  - `src/shield.rs` — `correlations_enabled` field, `disable_correlations` builder method, build-time bundled+config+custom resolution; updated 1 existing test, renamed 1, added 3 new
+  - `src/report.rs` — `output()` gains `show_correlations: bool`; JSON top-level key; text-mode detail block + summary suffix
+  - `src/cli.rs` — `--correlations` flag on Scan
+  - `src/main.rs` — refactored Scan path to use `Shield::builder()`
+  - `src/lib.rs` — re-exports `bundled_rules_with_window`, `load_custom_rules`
+  - `docs/rule-authoring.md` — new "Custom correlation rules" section
+- **Verification**:
+  - `cargo build --features yara,syara,syara-sbert,syara-llm` → clean.
+  - `cargo test --features yara,syara` → **311/311 green** (255 lib + 50 yara + 4 syara_rules + 2 doc). Was 297 at end of 11c; +14 from 11d (10 loader + 1 bundled-window + 3 shield).
+  - `cargo clippy --features yara,syara,syara-sbert,syara-classifier,syara-llm --all-targets -- -D warnings` → clean.
+  - End-to-end smoke (YARA engine, ChatML delimiter + PI fixture): both `sandwich_attack` correlations fire, JSON output includes `"correlations"` array with full finding nesting, text mode summary reads `"3 threat(s) detected, 2 correlation(s)."`, `--correlations` produces the expected stderr detail block. Exit code 1 (correct).
+- **Carried forward** (now in the *Future (deferred from Phase 11d)* backlog at the bottom of this file):
+  - Multi-engine `Shield` orchestration to light up the 6 `CrossEngine` rules.
+  - N-ary correlations (3+ refs) for richer attack-chain rules.
+  - Widening `Finding` with engine identity / rule_name if `rule_name_pattern` becomes load-bearing.
+  - JSON shape optimisations (finding-back-references) if reports get large.
+  - Custom rule hot-reload, custom-rule discovery directory, per-rule disable, class-weight tuning.
 
 ---
 
@@ -1067,6 +1099,19 @@ Combine calibrated evidence into per-class and overall threat probabilities.
 - **Per-deployment calibration profiles** — different calibration curves for different deployment contexts (chatbot vs. RAG pipeline vs. agent system)
 - **Confidence-based routing** — use confidence scores to decide which downstream action to take (allow / flag for review / block) at the orchestrator level rather than relying on exit codes
 - **Adversarial robustness testing** — systematically test whether an attacker can craft inputs that produce low confidence scores despite containing real attacks
+
+### Future (deferred from Phase 11d — correlation extensions)
+
+Captured 2026-04-25 during 11d planning. All marked "out of scope" in the 11d plan but worth revisiting once the core correlation surface has settled.
+
+- **Multi-engine `Shield` orchestration** — today's `Shield` holds one engine. Multi-engine support (Shield holds `Vec<Box<dyn Engine>>`, runs each, evaluator gets one bucket per engine) lights up the 6 `CrossEngine` bundled rules that currently ship forward-compat-only. Likely a Phase 14+ chunk because it touches engine lifecycle, config (engine list), and CLI (engine override semantics).
+- **N-ary correlations** — current `CorrelationEngine` enforces `match_refs.len() == 2`. Some attack patterns naturally decompose into 3-way or 4-way constraints (e.g. context-shift + delimiter-spoof + payload). Add an N-ary evaluation path; the bundled catalog would gain at least one true 3-way rule (combined setup-payload with delimiter spoofing).
+- **Widening `Finding` with engine identity / rule_name** — every D-decision so far has resisted this. If `rule_name_pattern` becomes load-bearing for custom correlations or multi-engine attribution drifts past description-matching, add `engine: String` and `rule_name: String` fields to `Finding` directly. Plan migration carefully (JSON shape change).
+- **Per-correlation finding-back-references in JSON** — currently each `MatchCorrelation` serializes its full contributing `Finding`s. For large reports an index-based reference scheme (`"finding_indices": [0, 4]` pointing into the top-level `findings` array) would shrink output. Worth doing only if real-world reports hit size pain.
+- **Custom rule hot-reload** — load custom correlation rules at process start only today. A file-watcher or config-reload signal would let long-running embeddings (server mode, future Phase 12+ session work) pick up rule changes without restart.
+- **Custom rule discovery directory** — mirror the YARA/SYARA pattern (XDG data dir for bundled, config dir override) for correlation rules. Today only the explicit `[correlation] custom_rules = "..."` path loads.
+- **Per-rule disable for correlations** — extend the existing `--disable` flag (today scoped to scanner / engine rule names) to recognise correlation rule names. Useful when a bundled correlation rule produces too many false positives in a specific deployment.
+- **Composite scoring via class weights** — composite_threat_level values are hard-coded in the bundled catalog. Surface them through `[scoring.class_weights]` so users can tune the relative weight of `sandwich_attack`, `multi_engine_corroboration`, etc. without forking.
 
 ---
 

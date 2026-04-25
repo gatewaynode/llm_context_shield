@@ -18,6 +18,8 @@ pub fn write_passthrough(input: &str, output_file: Option<&Path>) -> io::Result<
 
 /// `passthrough_mode`: when true, suppress the stdout summary line so the pipe stays clean.
 /// `show_scores`: when true, include threat scores in output.
+/// `show_correlations`: when true, include per-correlation detail blocks in text output.
+/// JSON output always includes correlations when present, regardless of this flag.
 /// Findings details are still written to stderr in text format.
 pub fn output(
     report: &ScanReport,
@@ -25,6 +27,7 @@ pub fn output(
     min_severity: Severity,
     passthrough_mode: bool,
     show_scores: bool,
+    show_correlations: bool,
 ) -> io::Result<()> {
     let filtered: Vec<_> = report
         .findings
@@ -42,6 +45,10 @@ pub fn output(
             if let Some(scores) = &report.scores {
                 filtered_report["threat_scores"] =
                     serde_json::to_value(scores).unwrap_or_default();
+            }
+            if !report.correlations.is_empty() {
+                filtered_report["correlations"] =
+                    serde_json::to_value(&report.correlations).unwrap_or_default();
             }
             let stdout = io::stdout();
             let mut out = stdout.lock();
@@ -67,6 +74,30 @@ pub fn output(
                 writeln!(err, "  at bytes: {}..{}", f.byte_range.0, f.byte_range.1)?;
                 writeln!(err)?;
             }
+            if show_correlations && !report.correlations.is_empty() {
+                for c in &report.correlations {
+                    writeln!(
+                        err,
+                        "[CORRELATION] {name} (level {level}, class {class})",
+                        name = c.rule_name,
+                        level = c.composite_threat_level,
+                        class = c.composite_threat_class,
+                    )?;
+                    writeln!(err, "  {}", c.explanation)?;
+                    writeln!(err, "  contributing findings:")?;
+                    for f in &c.findings {
+                        writeln!(
+                            err,
+                            "    [{severity}] {category} at bytes {a}..{b}",
+                            severity = f.severity,
+                            category = f.category,
+                            a = f.byte_range.0,
+                            b = f.byte_range.1,
+                        )?;
+                    }
+                    writeln!(err)?;
+                }
+            }
             if show_scores
                 && let Some(scores) = &report.scores
             {
@@ -80,10 +111,21 @@ pub fn output(
             if !passthrough_mode {
                 let stdout = io::stdout();
                 let mut out = stdout.lock();
+                let n_corr = report.correlations.len();
                 if filtered.is_empty() {
-                    writeln!(out, "No threats detected.")?;
-                } else {
+                    if n_corr == 0 {
+                        writeln!(out, "No threats detected.")?;
+                    } else {
+                        writeln!(out, "No threats detected, {n_corr} correlation(s).")?;
+                    }
+                } else if n_corr == 0 {
                     writeln!(out, "{} threat(s) detected.", filtered.len())?;
+                } else {
+                    writeln!(
+                        out,
+                        "{} threat(s) detected, {n_corr} correlation(s).",
+                        filtered.len()
+                    )?;
                 }
             }
         }

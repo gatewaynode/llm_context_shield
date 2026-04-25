@@ -8,8 +8,9 @@ use llm_context_shield::config::Config;
 use llm_context_shield::engines;
 use llm_context_shield::input::read_input;
 use llm_context_shield::report::{output, write_passthrough};
-use llm_context_shield::scanner::{ScanReport, Severity};
+use llm_context_shield::scanner::Severity;
 use llm_context_shield::scanners;
+use llm_context_shield::shield::Shield;
 
 fn main() {
     let cli = Cli::parse();
@@ -48,6 +49,7 @@ fn main() {
             safe_only_passthrough,
             output: output_file,
             threat_scores,
+            correlations,
         } => {
             // Merge: CLI arg > config > built-in default.
             let scan_cfg = config.scan.as_ref();
@@ -87,11 +89,17 @@ fn main() {
                 process::exit(2);
             }
 
-            let engine = engines::build(&engine_name, &config).unwrap_or_else(|err| {
-                error!(value = %engine_name, "invalid engine");
-                eprintln!("{err}");
-                process::exit(2);
-            });
+            let shield = Shield::builder()
+                .engine(&engine_name)
+                .min_severity(min_severity)
+                .disable(disable)
+                .config(config)
+                .build()
+                .unwrap_or_else(|err| {
+                    error!(value = %engine_name, "invalid engine");
+                    eprintln!("{err}");
+                    process::exit(2);
+                });
 
             let input = match read_input(file.as_deref()) {
                 Ok(text) => text,
@@ -102,30 +110,34 @@ fn main() {
                 }
             };
 
-            info!(engine = engine.name(), "engine active");
-            let (findings, scores) = engine.run_scored(&input, &disable);
-            info!(total = findings.len(), "scan complete");
+            let report = shield.scan(&input);
+            info!(
+                total = report.findings.len(),
+                correlations = report.correlations.len(),
+                "scan complete"
+            );
 
-            let filtered_count = findings
-                .iter()
-                .filter(|f| f.severity >= min_severity)
-                .count();
             info!(
                 format = %format,
                 min_severity = %min_severity,
-                filtered = filtered_count,
+                filtered = report.findings.len(),
                 "output"
             );
 
-            let report = ScanReport::from_scored(findings, scores);
-
-            if let Err(e) = output(&report, &format, min_severity, safe_only_passthrough, threat_scores) {
+            if let Err(e) = output(
+                &report,
+                &format,
+                min_severity,
+                safe_only_passthrough,
+                threat_scores,
+                correlations,
+            ) {
                 error!(error = %e, "failed to write output");
                 eprintln!("Error writing output: {e}");
                 process::exit(2);
             }
 
-            let has_findings = report.findings.iter().any(|f| f.severity >= min_severity);
+            let has_findings = !report.findings.is_empty();
 
             if safe_only_passthrough
                 && !has_findings

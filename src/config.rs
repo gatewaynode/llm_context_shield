@@ -21,6 +21,8 @@ pub struct Config {
     pub syara: Option<SyaraConfig>,
     /// Threat scoring configuration.
     pub scoring: Option<ScoringConfig>,
+    /// Cross-rule correlation configuration.
+    pub correlation: Option<CorrelationConfig>,
 }
 
 /// Rule-file discovery configuration.
@@ -100,6 +102,19 @@ impl ScoringConfig {
         }
         warnings
     }
+}
+
+/// Cross-rule correlation configuration.
+#[derive(Deserialize, Default, Clone)]
+pub struct CorrelationConfig {
+    /// Whether to evaluate correlation rules. Default: true.
+    pub enabled: Option<bool>,
+    /// Default byte distance for `Proximate` bundled rules
+    /// (`sandwich_attack`, `encode_and_inject`). Default: 500.
+    pub proximity_window: Option<usize>,
+    /// Optional path to a TOML file of user-defined correlation rules
+    /// merged with the bundled catalog at Shield construction.
+    pub custom_rules: Option<String>,
 }
 
 /// Configuration defaults for the `scan` subcommand.
@@ -234,4 +249,16 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 # to the global cumulative score. Unlisted classes default to 1.0.
 # [scoring.class_weights]
 # obfuscation = 0.5
+
+[correlation]
+# Whether to evaluate cross-rule correlation rules. Default: true.
+# enabled = true
+
+# Default byte distance for the bundled `Proximate` correlation rules
+# (sandwich_attack, encode_and_inject). Default: 500.
+# proximity_window = 500
+
+# Optional path to a TOML file of user-defined correlation rules.
+# See docs/rule-authoring.md for the file format.
+# custom_rules = "/path/to/correlation_rules.toml"
 "#;

@@ -5,6 +5,7 @@
 //! the [`bundled`] submodule.
 
 pub mod bundled;
+pub mod loader;
 
 use serde::Serialize;
 

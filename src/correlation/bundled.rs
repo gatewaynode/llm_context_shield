@@ -35,17 +35,24 @@ fn rule(
     }
 }
 
-/// Returns the bundled correlation rule catalog. Callers opt in by passing
-/// the result to [`crate::ShieldBuilder::correlation_rules`].
+/// Returns the bundled correlation rule catalog with the default 500-byte
+/// proximity window. Equivalent to `bundled_rules_with_window(500)`.
 pub fn bundled_rules() -> Vec<CorrelationRule> {
+    bundled_rules_with_window(500)
+}
+
+/// Returns the bundled correlation rule catalog with a configurable proximity
+/// window applied to the two `Proximate` rules (`sandwich_attack`,
+/// `encode_and_inject`). Other rule constraints are unaffected.
+pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule> {
     vec![
         rule(
             "sandwich_attack",
-            "Delimiter manipulation paired with prompt injection within 500 bytes — \
-             attacker faked a context boundary then injected.",
+            "Delimiter manipulation paired with prompt injection within the \
+             proximity window — attacker faked a context boundary then injected.",
             Category::DelimiterManipulation,
             Category::PromptInjection,
-            CorrelationType::Proximate { proximity_bytes: 500 },
+            CorrelationType::Proximate { proximity_bytes },
             6,
             "sandwich_attack",
         ),
@@ -71,11 +78,11 @@ pub fn bundled_rules() -> Vec<CorrelationRule> {
         ),
         rule(
             "encode_and_inject",
-            "Hidden / encoded content proximate to a prompt injection within 500 \
-             bytes — attacker concealed part of the payload.",
+            "Hidden / encoded content proximate to a prompt injection within the \
+             proximity window — attacker concealed part of the payload.",
             Category::HiddenContent,
             Category::PromptInjection,
-            CorrelationType::Proximate { proximity_bytes: 500 },
+            CorrelationType::Proximate { proximity_bytes },
             7,
             "encode_and_inject",
         ),
@@ -213,6 +220,25 @@ mod tests {
         .collect();
         assert_eq!(names, expected);
         assert_eq!(bundled_rules().len(), 11);
+    }
+
+    #[test]
+    fn proximity_window_propagates_to_bundled_proximate_rules() {
+        let rules = bundled_rules_with_window(123);
+        for r in rules {
+            if matches!(r.name.as_str(), "sandwich_attack" | "encode_and_inject") {
+                match r.constraint {
+                    CorrelationType::Proximate { proximity_bytes } => {
+                        assert_eq!(
+                            proximity_bytes, 123,
+                            "rule {} did not pick up the configured window",
+                            r.name
+                        );
+                    }
+                    other => panic!("rule {} should be Proximate, got {:?}", r.name, other),
+                }
+            }
+        }
     }
 
     #[test]

@@ -51,6 +51,10 @@ pub enum Command {
         /// Include threat scores in output (always included with -f json when scores are present)
         #[arg(long)]
         threat_scores: bool,
+
+        /// Show per-correlation detail in text output (correlations are always present in JSON)
+        #[arg(long)]
+        correlations: bool,
     },
 
     /// Scaffold config and/or rules directories under XDG paths.
