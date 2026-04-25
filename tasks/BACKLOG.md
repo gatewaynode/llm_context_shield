@@ -102,3 +102,53 @@ Observed on 2026-04-22 after switching 9b to the natural `#pattern`-count form f
 **Related:** SYARA-X 0.3.0 changelog notes that similarity/classifier/LLM/phash matchers always cap at `#rule ≤ 1` because they produce `vec![detail]` or `vec![]` per invocation. So the inflation is unique to string/regex matchers with condition-level count gating — and 9b is currently the only bundled rule that triggers it deliberately.
 
 **Next step:** defer until a second count-gated rule lands (maybe 9e's session-protocol rules, or a prescan-driven prompt_hijack booster). Revisit with real-world scoring data — if inflation makes threshold tuning confusing, prototype rule-level dedup.
+
+---
+
+## Multilingual embedding model swap (multilingual-e5-large)
+
+**Added:** 2026-04-24 (deferred from Phase 10f spec)
+**Context:** All bundled `similarity:` rules today are tuned for `all-MiniLM-L6-v2`, which is primarily English. Attacks translated into low-resource languages don't trigger. A multilingual encoder (e.g. `multilingual-e5-large`, ~560 M params, 100+ languages) would close that gap.
+
+**What's hard:**
+- Bundled thresholds (10a–10e) were probed against MiniLM. Swapping the encoder changes the cosine-similarity distribution; every threshold has to be re-probed.
+- Larger model = larger ONNX file + slower inference. The sub-second similarity-rule latency budget in `docs/semantic-rules.md` doesn't survive the swap without quantization.
+- `SyaraEngine::register_onnx_sbert` reads `config.syara.onnx_model_dir` (the directory path). Swapping models is already a config change — no code work needed, just point the config at a different model dir. The blocker is the threshold-retuning corpus, not the wiring.
+
+**Open questions:**
+- Is multilingual coverage a real user need, or an aspirational checkmark? Most LLM injection attacks observed in 2026 are English. A targeted multilingual rule-set may be lower priority than other Phase 11+ work.
+- Can we ship dual configurations (English-tuned MiniLM + multilingual-e5-large with separate thresholds) and let the user pick? Doubles the rule maintenance burden.
+
+**Next step:** park until either (a) a user reports a non-English attack class that English-tuned rules miss, or (b) we have a labeled corpus large enough to re-probe thresholds against multiple encoders. Re-probing without a corpus is throwaway work.
+
+---
+
+## Latency benchmark for semantic rules
+
+**Added:** 2026-04-24 (deferred from Phase 10f spec)
+**Context:** `docs/semantic-rules.md` currently describes latency in qualitative terms ("~10–50 ms per embedding", "~1–5 s per LLM rule"). For users picking between engines or tuning rule selection, a quantitative bench would help — semantic vs string-only on a representative input set, broken down by rule tier (string, similarity, LLM).
+
+**What's hard:**
+- Latency depends on hardware (M-series Apple Silicon vs x86, CPU vs GPU), input length, chunk count, and the loaded LLM. A bench number is meaningful only with the configuration disclosed alongside.
+- `cargo bench` is overkill for what amounts to a CLI smoke run with timing. A simpler `tests/semantic_bench.rs` integration target gated on `semantic-integration` would be enough.
+- Stable comparison requires fixing the ONNX runtime threads, the loaded LLM, and the input fixture.
+
+**Next step:** design once, but only after Phase 11 (correlation) lands — adding a correlation pass changes the relevant numbers, and benchmarking before that just measures throwaway state.
+
+---
+
+## Threshold tuning against an attack/benign corpus
+
+**Added:** 2026-04-24 (deferred from Phase 10f spec)
+**Context:** All similarity-rule thresholds (10a, 10b, 10e) were pinned by ad-hoc probes — 4–8 paraphrases vs 4–8 benign controls. That's enough to verify margin > 0.15, not enough to optimize precision/recall on a real attack distribution. The same is true for LLM-rule prompt design: we have anecdotal benign-control checks, no FP-rate measurement on a representative input mix.
+
+**What's hard:**
+- We don't have the corpus. Building one is itself a project — labeled attack samples, labeled benign samples, defensible labeling guidelines. Public datasets (PromptBench, Lakera Gandalf, etc.) are partial coverage at best.
+- Threshold optimization without held-out validation is overfitting. Need train/test splits.
+- "Optimal" is multi-objective: precision-vs-recall tradeoff, per-category weighting, threshold-gating interactions. A scalar threshold per rule is the simplest knob; the scoreboard adds another.
+
+**Open questions:**
+- Acquire vs build: Is there an existing labeled corpus we can license, or do we need to bootstrap one? (Lakera/Promptmap have published material.)
+- Tooling: a `tools/tune_thresholds.rs` binary that sweeps thresholds and reports F1/precision/recall per rule would be a one-time investment with ongoing payoff.
+
+**Next step:** revisit when (a) we have a corpus, OR (b) field reports of FP/FN make a specific threshold mis-pin obvious. Until then, ad-hoc probing during rule authoring (the 10a–10e pattern) is good enough.

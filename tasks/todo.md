@@ -749,14 +749,46 @@ Reuses 10d's LLM infra (LMStudio endpoint, `register_llm_evaluator`, skip-on-mis
 
 ### 10f — Infrastructure and testing
 
-- [ ] Add `Category` variants for new semantic-only categories (if not already covered by Phase 8/9 additions)
-- [ ] Register semantic rule files in `src/rules.rs` — load only when `syara-sbert`/`syara-llm` features are active
-- [ ] Update `SyaraEngine::new()` to configure the embedding model from `[syara]` config (currently hardcoded to `all-minilm`; multilingual rules need `multilingual-e5-large`)
-- [ ] Add config option: `[syara] embedding_model = "multilingual-e5-large"` for users who want multilingual detection
-- [ ] Create `docs/semantic-rules.md` — setup guide for ONNX-local (MiniLM) + LMStudio / OpenAI-compatible endpoints, model selection, latency expectations, when to use semantic vs. string rules (created partially in 10 bootstrap; extend with LLM section in 10d)
-- [ ] Integration test harness for semantic rules — environment-gated tests using `LCS_ONNX_MODEL_DIR` (sbert/classifier) and `LCS_LLM_ENDPOINT` (LLM) skip-or-fail-loud patterns
-- [ ] Benchmark: measure scan latency with semantic rules enabled vs. string-only, document in `docs/semantic-rules.md`
-- [ ] Threshold tuning: run semantic rules against a corpus of known attacks + known benign inputs, adjust thresholds based on precision/recall
+Most of this sub-phase landed as side-effects of 10a–10e. The audit:
+
+- [x] Add `Category` variants for new semantic-only categories — `Obfuscation` added in 10c, `Coercion` already existed from 9c.
+- [x] Register semantic rule files in `src/rules.rs` — every sub-phase appended its rule file to `bundled_syara()`.
+- [x] Create `docs/semantic-rules.md` — bootstrap built it; 10d extended with the LLM section + LMStudio setup; 10e added LLM-rules table and troubleshooting.
+- [x] Integration test harness for semantic rules — `LCS_ONNX_MODEL_DIR` (10a) + `LCS_LLM_ENDPOINT` (10d) skip-or-fail-loud patterns; the semantic-integration suite is 24 tests as of 10e.
+- [x] **Delete dead `embed_model` config field** — the field was declared on `SyaraConfig` and shown in `DEFAULT_CONFIG` but never read; `register_onnx_sbert` only consumes `onnx_model_dir` (the directory path). The "model name" was redundant with the directory and confused the actual config mechanism. Removed from `src/config.rs` (struct + comment) and `tasks/ARCHITECTURE.md` (struct snapshot + config snapshot).
+- [→] **Multilingual embedding model swap** — moved to `tasks/BACKLOG.md`. Real follow-up work; bundled thresholds are MiniLM-tuned and re-probing requires a labeled corpus we don't have.
+- [→] **Latency benchmark** — moved to `tasks/BACKLOG.md`. Better measured after Phase 11 (correlation) lands so the numbers reflect the final scan pipeline.
+- [→] **Threshold tuning against an attack/benign corpus** — moved to `tasks/BACKLOG.md`. Needs a labeled corpus first; ad-hoc rule-authoring probes (10a–10e pattern) suffice until a corpus exists.
+
+### Review (10f) — Infrastructure cleanup
+
+**Status: COMPLETE — 2026-04-24** (closes Phase 10).
+
+- **Final shape:** 1 real edit + 3 backlog moves. Most of the original 10f spec was done as side-effects during 10a–10e; the only remaining infrastructure bug was the dead `embed_model` field.
+- **What landed:**
+  - `src/config.rs` — removed `embed_model: Option<String>` from `SyaraConfig`; removed its `DEFAULT_CONFIG` comment.
+  - `tasks/ARCHITECTURE.md` — removed two stale references to `embed_model`.
+  - `tasks/BACKLOG.md` — added three deferred items (multilingual encoder, latency benchmark, corpus threshold-tuning) with context, blockers, and resume conditions.
+- **Verification:**
+  - `cargo build --features yara,syara,syara-sbert,syara-llm` → clean.
+  - `cargo test --features yara,syara` → 261 Phase 9 tests green (no regression — no test referenced the deleted field).
+  - `cargo clippy --features yara,syara,syara-sbert,syara-classifier,syara-llm --all-targets -D warnings` → clean.
+  - Semantic-integration suite untouched (no LLM/sbert path uses `embed_model`).
+- **Design lesson:** spec-driven housekeeping bullets that get done as side-effects during feature work need an audit before declaring a sub-phase incomplete. Most of 10f's items were already done; carrying them as open ticks would have understated progress and overstated the remaining work. **Audit first, plan second** when a sub-phase title is "infrastructure".
+
+---
+
+## Phase 10: COMPLETE — 2026-04-24
+
+Sub-phase landing log:
+- 10 bootstrap + 10a (paraphrase prompt-injection rules) — 12 edits, 2026-04-22.
+- 10b (paraphrastic evasion: forget/exfil/jailbreak) — 5 edits, 2026-04-23.
+- 10c (classifier scaffolding without rules; content rules promoted to LLM) — 3 edits, 2026-04-23 (folded into 10d commit).
+- 10d (LLM evaluator bootstrap + compositional + content-quality rules) — 12 edits, 2026-04-23.
+- 10e (semantic coercion: GUILT-family similarity + broad LLM judgment) — 6 edits including the syara-x 0.3.1 dep bump for BUG-038, 2026-04-24.
+- 10f (infrastructure cleanup) — 1 real edit + 3 backlog moves, 2026-04-24.
+
+End-state: 261 Phase 9 unit tests + 24 semantic-integration tests + 4 syara_rules + 50 yara integration tests = baseline green across all feature combos. Three rule tiers wired (string/regex always-on, similarity via ONNX-local MiniLM under `syara-sbert`, LLM via OpenAI-compatible endpoints under `syara-llm`). Bundled rules cover paraphrased prompt injections (5 rules), compositional attacks (1), content-quality padding/overflow (2), and coercion (2). Two upstream bugs surfaced and fixed in syara-x during the phase: BUG-035 (DSL parser caveat documented in memory) and BUG-038 (reasoning_effort default for OpenAiChatEvaluator, fixed in 0.3.1).
 
 ### Future (out of scope for Phase 10)
 

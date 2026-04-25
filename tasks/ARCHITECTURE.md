@@ -441,9 +441,6 @@ disable = []
 # Default: http://localhost:1234/v1/chat/completions (LMStudio)
 # llm_endpoint = "http://localhost:1234/v1/chat/completions"
 
-# Model name for embedding-based matchers (sbert, classifier).
-# embed_model = "all-minilm"
-
 # Model name for LLM evaluator.
 # llm_model = "google/gemma-4-31b"
 ```
@@ -461,7 +458,6 @@ pub struct RulesConfig {
 #[derive(Deserialize, Default)]
 pub struct SyaraConfig {
     pub llm_endpoint: Option<String>,
-    pub embed_model: Option<String>,
     pub llm_model: Option<String>,
     pub onnx_model_dir: Option<String>,
 }

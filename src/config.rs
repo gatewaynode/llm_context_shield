@@ -39,7 +39,6 @@ pub struct SyaraConfig {
     /// vLLM, Ollama's `/v1` shim, etc.). Used when the `syara-llm` feature is
     /// enabled. Default: `http://localhost:1234/v1/chat/completions` (LMStudio).
     pub llm_endpoint: Option<String>,
-    pub embed_model: Option<String>,
     pub llm_model: Option<String>,
     /// Path to the directory containing `model.onnx` + `tokenizer.json` for the
     /// ONNX-local `sbert` matcher (used by the `syara-sbert` / `syara-classifier`
@@ -208,9 +207,6 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 # vLLM, Ollama's `/v1` shim, etc.). Full path to the chat-completions endpoint.
 # Default: http://localhost:1234/v1/chat/completions (LMStudio default)
 # llm_endpoint = "http://localhost:1234/v1/chat/completions"
-
-# Model name for embedding-based matchers (sbert, classifier).
-# embed_model = "all-minilm"
 
 # Model name for LLM evaluator. Must match a model loaded in your endpoint.
 # Tested-known-good for the bundled LLM rules:
