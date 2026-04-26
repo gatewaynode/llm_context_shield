@@ -76,6 +76,9 @@ pub fn output(
                 )?;
                 writeln!(err, "  matched: {:?}", f.matched_text)?;
                 writeln!(err, "  at bytes: {}..{}", f.byte_range.0, f.byte_range.1)?;
+                if !f.rule_name.is_empty() {
+                    writeln!(err, "  rule: {} (engine: {})", f.rule_name, f.engine)?;
+                }
                 writeln!(err)?;
             }
             if show_correlations && !report.correlations.is_empty() {

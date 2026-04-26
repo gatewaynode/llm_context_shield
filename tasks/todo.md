@@ -113,6 +113,85 @@ The harness can validate categories against `lcs rules`, but per-finding traceab
 
 ---
 
+## Phase 11.6: Extended rule introspection — version/threat_level/threshold + cross-engine `--all`
+
+Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) and a rule-set fingerprint. Phase 11.6 extends the introspection surface along two axes:
+
+1. **Per-rule scoring metadata** — add `version`, `threat_level`, and `threshold` to `RuleMeta` and the `lcs rules --json` output. Today consumers asking "what does this rule contribute to the scoreboard?" or "what version of this rule am I running?" still have to read source. Surfacing the scoring trio aligns introspection with what the scorer actually uses at scan time and gives audit pipelines a per-rule version stamp that complements the rule-set fingerprint.
+2. **Cross-engine view** — `lcs rules -a / --all` emits a single JSON document covering every built-in engine (simple, yara, syara) so an external consumer can capture the full per-instance picture without invoking `lcs rules` three times. Same `Config` flow as today's `-e`-scoped path (each engine is constructed identically, just collected into one report).
+
+**Reframing.** Per 11.5 Priori 2, schema is per-instance. `--all` describes the union of engines **as currently configured** (XDG rules dir, custom_rules, disabled list) — not a static "everything that ships." The combined fingerprint already reported by `lcs rules --fingerprint` continues to be the single audit value; `--all` is the structural companion to that scalar.
+
+### 11.6a — Extend `RuleMeta` with version/threat_level/threshold
+
+- [ ] Add three fields to `RuleMeta` (`src/engines/mod.rs`):
+  - `version: Option<String>` — `Some("...")` when the rule's metadata declares it, `None` otherwise. Convention is semver but the field is opaque to lcs (string round-trip only).
+  - `threat_level: i32` — what one match contributes to the rule's `threat_class` score. Default `1` (matches `ThreatMeta::with_defaults`).
+  - `threshold: i32` — minimum accumulated class score required for the rule to fire. Default `0` (always-fire).
+- [ ] Update introspection construction sites:
+  - `SimpleEngine::rule_metadata` — `version = None`, `threat_level = 1`, `threshold = 0` for every regex scanner. Document: simple-engine rules are compiled in; per-rule version is meaningless.
+  - `YaraEngine::extract_rule_meta` — extend `ParsedYaraMeta` to capture `version`; reshape so introspection reads `version`/`threat_level`/`threshold` from the same `parse_meta` output the scan-time `extract_meta` uses. Single parsing path.
+  - `SyaraEngine::build_rule_metadata` — extend `parse_source_meta` similarly so introspection and scan-time both project from one parser.
+- [ ] Bundled rule edits (one line each):
+  - Add `version = "0.5"` (current ship version) to every bundled `.yar` file's `meta:` block.
+  - Add `version = "0.5"` to every bundled `.syara` file's `meta:` block.
+  - Author convention captured in 11.6c docs.
+- [ ] Fingerprint contract: the new fields participate in the canonical-JSON sort fed to `RuleSetFingerprint::compute`. Bumping `threshold` in any rule changes the fingerprint — that is the desired behaviour (audit trails should be sensitive to scoring-metadata changes, not just identity).
+- [ ] JSON shape (`lcs rules --json` and `lcs scan`-side per-finding payload remain stable): `RuleMeta` gains three additive keys. No existing consumer breaks; `version` is `null` for SimpleEngine and any rule that didn't opt in.
+- [ ] Text shape (`lcs rules` default view): unchanged — keeps the human view minimal. Authors who want the full picture pipe through `--json`.
+- [ ] Unit tests:
+  - YARA + SYARA rules with explicit `version`/`threat_level`/`threshold` round-trip into `RuleMeta`.
+  - Defaults: rules without these meta keys produce `version: None`, `threat_level: 1`, `threshold: 0`.
+  - `SimpleEngine::rule_metadata` always emits the documented defaults.
+  - Fingerprint sensitivity: mutating `threshold` (or adding/removing a `version` key) on any rule changes the fingerprint.
+
+### 11.6b — `lcs rules --all`
+
+- [ ] Add `--all` (`-a`) flag to `Command::Rules` (`src/cli.rs`):
+  - Mutually exclusive with `-e <engine>` (clap `conflicts_with`).
+  - Always emits JSON. Combining with `--categories` / `--threat-classes` / `--fingerprint` is a plan-mode decision — recommended: allow them and emit cross-engine **union** semantics for those views.
+- [ ] Default `--all` JSON shape:
+  ```json
+  {
+    "fingerprint": "<combined-rule-set fingerprint, same value `lcs rules --fingerprint` already returns>",
+    "engines": {
+      "simple": [<RuleMeta+engine>...],
+      "yara":   [<RuleMeta+engine>...],
+      "syara":  [<RuleMeta+engine>...]
+    }
+  }
+  ```
+- [ ] Engine construction in `--all` mode: each of `simple`, `yara`, `syara` is built from the same loaded `Config` (rules dir, custom_rules, disable list). The configured `[scan] engine` is **ignored** in `--all` mode — `--all` is "the full picture" by definition.
+- [ ] Error handling: if an engine fails to build (e.g. malformed YARA rule in the rules dir), report the error inline at top-level under an `"errors": {"<engine>": "<msg>"}` map and continue collecting from the others. Do not fail the whole command unless every engine errors. Decide hard-fail-vs-soft-fail in plan-mode.
+- [ ] Cross-engine fingerprint: confirm the existing `RuleSetFingerprint` already hashes the union (it does — 11.5a sorts by `(engine_name, rule_name)`). `--all`'s `"fingerprint"` is the same value as `lcs rules --fingerprint` provided the configured `Shield` covers the same engine set; document the relationship.
+- [ ] Integration tests:
+  - `lcs rules --all` and `lcs rules -a` produce identical JSON.
+  - Each of the three engine keys is present and contains a non-empty array (assuming bundled rules ship for each).
+  - `lcs rules --all -e simple` exits 2 with a clear "mutually exclusive" message.
+  - `lcs rules --all` JSON parses cleanly and the `fingerprint` key is 64-char lower-hex.
+  - Per-rule fields include `version`, `threat_level`, `threshold` (the 11.6a payload).
+  - For the configured engine, `lcs rules --json` and the matching engine subarray of `lcs rules --all` agree on rule names and metadata content.
+
+### 11.6c — Documentation and harness hand-off
+
+- [ ] Update `docs/rule-introspection.md` (created in 11.5d):
+  - Add a per-field section on `version` / `threat_level` / `threshold` (semantics, defaults, fingerprint participation).
+  - Add a "Cross-engine view (`--all`)" section with sample JSON and the configured-engine vs `--all` distinction.
+- [ ] Update `docs/rule-authoring.md`:
+  - Show the `version = "..."` meta convention for YARA and SYARA rules.
+  - Mention `threat_level` and `threshold` are now exposed via introspection (the fields themselves were already part of authoring; this phase reshapes them for read-out).
+- [ ] Update `shield-harness` hand-off note (Phase 11.5d's resolved-OOB section): per-run `meta.json` can now snapshot per-rule `version` + `threshold` alongside the fingerprint. Useful for diagnosing recall regressions caused by metadata edits (e.g. someone bumped a threshold and a sample silently stopped firing — the per-rule snapshot pinpoints the change in seconds).
+- [ ] Update PRD §6.2 (Library embedding contract) to reflect the widened `RuleMeta` shape — additive change, but the embedding contract should mention what's exposed.
+
+**Non-goals for Phase 11.6**:
+- No version-bump enforcement — `version` is opaque metadata; lcs does not warn or refuse when authors leave the field unchanged across edits.
+- No per-engine fingerprint — the existing combined fingerprint stays; `--all` reports the same single value.
+- No CLI shape change to `--json` for `-e <engine>` — that path stays as-is. Cross-engine view is exclusively under `--all`.
+- No write / edit / template surface — `lcs rules --all` is read-only introspection. Authoring still happens in `.yar` / `.syara` source files.
+- No correlation-rule or session-rule introspection — those still live behind the 11.5d forward seeds for future phases. `--all` covers built-in scan engines only.
+
+---
+
 ## Phase 12: Session-aware scanning
 
 Add optional *temporal* per-session state to detect multi-turn attack patterns — crescendo attacks (taxonomy §8.1), gradual steering (§8.1), and in-session protocol accumulation (§8.3). The session module lives in `llm_context_shield` as the orchestrator, not in the engine libraries, because it requires cross-scan memory that individual engines shouldn't own.

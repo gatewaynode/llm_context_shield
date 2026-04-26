@@ -81,6 +81,9 @@ mod tests {
             category,
             severity: Some(Severity::High),
             threat_class: threat_class.to_string(),
+            version: None,
+            threat_level: 1,
+            threshold: 0,
         }
     }
 
@@ -152,5 +155,41 @@ mod tests {
     fn empty_rule_set_still_hashes() {
         let fp = compute(&[("simple", &[])]);
         assert_eq!(fp.0.len(), 64);
+    }
+
+    #[test]
+    fn version_change_changes_fingerprint() {
+        let mut m1 = meta("rule_a", Category::PromptInjection, "x");
+        let mut m2 = m1.clone();
+        m1.version = None;
+        m2.version = Some("0.5".to_string());
+        assert_ne!(
+            compute(&[("simple", std::slice::from_ref(&m1))]),
+            compute(&[("simple", std::slice::from_ref(&m2))]),
+        );
+    }
+
+    #[test]
+    fn threat_level_change_changes_fingerprint() {
+        let mut m1 = meta("rule_a", Category::PromptInjection, "x");
+        let mut m2 = m1.clone();
+        m1.threat_level = 1;
+        m2.threat_level = 2;
+        assert_ne!(
+            compute(&[("simple", std::slice::from_ref(&m1))]),
+            compute(&[("simple", std::slice::from_ref(&m2))]),
+        );
+    }
+
+    #[test]
+    fn threshold_change_changes_fingerprint() {
+        let mut m1 = meta("rule_a", Category::PromptInjection, "x");
+        let mut m2 = m1.clone();
+        m1.threshold = 0;
+        m2.threshold = 5;
+        assert_ne!(
+            compute(&[("simple", std::slice::from_ref(&m1))]),
+            compute(&[("simple", std::slice::from_ref(&m2))]),
+        );
     }
 }

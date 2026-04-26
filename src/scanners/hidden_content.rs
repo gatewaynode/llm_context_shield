@@ -2,6 +2,8 @@ use regex::Regex;
 
 use crate::scanner::{Category, Finding, Scanner, Severity};
 
+const RULE_NAME: &str = "hidden_content";
+
 pub struct HiddenContentScanner {
     zero_width_chars: Vec<(char, &'static str)>,
     base64_pattern: Regex,
@@ -53,36 +55,45 @@ impl Scanner for HiddenContentScanner {
         for (ch, desc) in &self.zero_width_chars {
             for (idx, _) in input.match_indices(*ch) {
                 let end = idx + ch.len_utf8();
-                findings.push(Finding::new(
-                    Category::HiddenContent,
-                    Severity::High,
-                    desc,
-                    &format!("U+{:04X}", *ch as u32),
-                    idx..end,
-                ));
+                findings.push(
+                    Finding::new(
+                        Category::HiddenContent,
+                        Severity::High,
+                        desc,
+                        &format!("U+{:04X}", *ch as u32),
+                        idx..end,
+                    )
+                    .with_rule_name(RULE_NAME),
+                );
             }
         }
 
         // Check for suspicious base64 blobs
         for m in self.base64_pattern.find_iter(input) {
-            findings.push(Finding::new(
-                Category::HiddenContent,
-                Severity::Medium,
-                "Suspicious base64-encoded content",
-                &truncate(m.as_str(), 60),
-                m.range(),
-            ));
+            findings.push(
+                Finding::new(
+                    Category::HiddenContent,
+                    Severity::Medium,
+                    "Suspicious base64-encoded content",
+                    &truncate(m.as_str(), 60),
+                    m.range(),
+                )
+                .with_rule_name(RULE_NAME),
+            );
         }
 
         // Check for homoglyph mixing (Cyrillic/Greek chars in otherwise Latin text)
         for m in self.homoglyph_pattern.find_iter(input) {
-            findings.push(Finding::new(
-                Category::HiddenContent,
-                Severity::High,
-                "Mixed script homoglyphs (possible visual spoofing)",
-                &truncate(m.as_str(), 60),
-                m.range(),
-            ));
+            findings.push(
+                Finding::new(
+                    Category::HiddenContent,
+                    Severity::High,
+                    "Mixed script homoglyphs (possible visual spoofing)",
+                    &truncate(m.as_str(), 60),
+                    m.range(),
+                )
+                .with_rule_name(RULE_NAME),
+            );
         }
 
         findings
@@ -112,6 +123,7 @@ mod tests {
         let findings = scan(input);
         assert!(!findings.is_empty());
         assert!(findings.iter().any(|f| f.description == "Zero-width space"));
+        assert!(findings.iter().all(|f| f.rule_name == "hidden_content"));
     }
 
     #[test]

@@ -35,12 +35,21 @@ pub use yara::YaraEngine;
 /// e.g. `SimpleEngine` regex scanners assign per-pattern severity at match
 /// time, so the rule itself doesn't carry one. YARA / SYARA rules with a
 /// `severity = "..."` meta field always emit `Some(_)`.
+///
+/// `version: None` means the rule does not declare a `version` meta field;
+/// SimpleEngine emits `None` (rules are compiled in, version is meaningless).
+/// `threat_level` and `threshold` are non-Optional and mirror the scan-time
+/// effective defaults (`1` and `0`) when the rule does not declare them, so
+/// introspection matches what the scoring path actually uses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RuleMeta {
     pub name: String,
     pub category: Category,
     pub severity: Option<Severity>,
     pub threat_class: String,
+    pub version: Option<String>,
+    pub threat_level: i32,
+    pub threshold: i32,
 }
 
 /// Common interface for all scan engines.

@@ -600,4 +600,54 @@ mod tests {
             "sandwich_attack should not fire when proximity_window is 50 (gap is 95)"
         );
     }
+
+    #[test]
+    fn correlation_propagates_finding_provenance() {
+        use crate::correlation::{CorrelationRule, CorrelationType, MatchRef};
+        use crate::scanner::{Category, Finding};
+
+        let findings = vec![
+            Finding::new(Category::DelimiterManipulation, Severity::High, "delim", "x", 0..5)
+                .with_rule_name("custom_delim")
+                .with_engine("fixed"),
+            Finding::new(Category::PromptInjection, Severity::High, "pi", "x", 10..20)
+                .with_rule_name("custom_pi")
+                .with_engine("fixed"),
+        ];
+        let rule = CorrelationRule {
+            name: "provenance_check".into(),
+            explanation: "delim + PI".into(),
+            match_refs: vec![
+                MatchRef {
+                    category: Category::DelimiterManipulation,
+                    rule_name_pattern: None,
+                    engine_filter: None,
+                },
+                MatchRef {
+                    category: Category::PromptInjection,
+                    rule_name_pattern: None,
+                    engine_filter: None,
+                },
+            ],
+            constraint: CorrelationType::Proximate { proximity_bytes: 100 },
+            composite_threat_level: 4,
+            composite_threat_class: "compound".into(),
+        };
+        let shield = Shield::builder()
+            .custom_engine(Box::new(FixedEngine(findings)))
+            .correlation_rules(vec![rule])
+            .build()
+            .unwrap();
+        let report = shield.scan("ignored");
+        let corr = report
+            .correlations
+            .iter()
+            .find(|c| c.rule_name == "provenance_check")
+            .expect("user correlation must fire");
+        let rule_names: std::collections::HashSet<&str> =
+            corr.findings.iter().map(|f| f.rule_name.as_str()).collect();
+        assert!(rule_names.contains("custom_delim"));
+        assert!(rule_names.contains("custom_pi"));
+        assert!(corr.findings.iter().all(|f| f.engine == "fixed"));
+    }
 }

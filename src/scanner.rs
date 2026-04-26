@@ -133,6 +133,15 @@ pub struct Finding {
     pub description: String,
     pub matched_text: String,
     pub byte_range: (usize, usize),
+    /// Name of the rule that fired this finding. Matches the corresponding
+    /// `RuleMeta.name` from `Engine::rule_metadata()`. Empty string when the
+    /// finding originates from a manually-constructed fixture or a custom
+    /// engine that opts out of provenance — built-in engines always populate.
+    pub rule_name: String,
+    /// Name of the engine that produced this finding. Matches the
+    /// `EngineFindings.engine` value used by correlation. Empty string under
+    /// the same conditions as `rule_name`.
+    pub engine: String,
 }
 
 impl Finding {
@@ -149,7 +158,19 @@ impl Finding {
             description: description.to_string(),
             matched_text: matched_text.to_string(),
             byte_range: (range.start, range.end),
+            rule_name: String::new(),
+            engine: String::new(),
         }
+    }
+
+    pub fn with_rule_name(mut self, name: &str) -> Self {
+        self.rule_name = name.to_string();
+        self
+    }
+
+    pub fn with_engine(mut self, engine: &str) -> Self {
+        self.engine = engine.to_string();
+        self
     }
 }
 
@@ -245,13 +266,10 @@ impl RegexScanner {
         let mut findings = Vec::new();
         for (regex, severity, desc) in &self.patterns {
             for m in regex.find_iter(input) {
-                findings.push(Finding::new(
-                    self.category,
-                    *severity,
-                    desc,
-                    m.as_str(),
-                    m.range(),
-                ));
+                findings.push(
+                    Finding::new(self.category, *severity, desc, m.as_str(), m.range())
+                        .with_rule_name(self.name),
+                );
             }
         }
         findings
