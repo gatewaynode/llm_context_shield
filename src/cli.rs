@@ -55,6 +55,10 @@ pub enum Command {
         /// Show per-correlation detail in text output (correlations are always present in JSON)
         #[arg(long)]
         correlations: bool,
+
+        /// Append the rule-set fingerprint to text output (always present in JSON output)
+        #[arg(long)]
+        show_fingerprint: bool,
     },
 
     /// Scaffold config and/or rules directories under XDG paths.
@@ -77,5 +81,34 @@ pub enum Command {
         /// Engine whose rule names should be listed: simple, yara, syara
         #[arg(short = 'e', long)]
         engine: Option<String>,
+    },
+
+    /// Inspect the loaded rule set: rule list, categories, threat classes, fingerprint.
+    ///
+    /// Builds the same `Shield` `lcs scan` would use (same config flow, same
+    /// rules dir, same engine selection) so the rule set described here is
+    /// the one a scan would actually run against. View flags
+    /// (`--categories`, `--threat-classes`, `--json`, `--fingerprint`) are
+    /// mutually exclusive; default is the human-readable rule list.
+    Rules {
+        /// Engine to inspect: simple, yara, syara
+        #[arg(short = 'e', long)]
+        engine: Option<String>,
+
+        /// Print the category set the configured shield can emit, one per line
+        #[arg(long, group = "rules_view")]
+        categories: bool,
+
+        /// Print the threat-class set the configured shield can emit, one per line
+        #[arg(long = "threat-classes", group = "rules_view")]
+        threat_classes: bool,
+
+        /// Emit JSON: {"fingerprint": "<hex>", "rules": [<rule>...]}
+        #[arg(long, group = "rules_view")]
+        json: bool,
+
+        /// Print just the rule-set fingerprint as a single hex line
+        #[arg(long, group = "rules_view")]
+        fingerprint: bool,
     },
 }

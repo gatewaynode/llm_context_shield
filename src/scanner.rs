@@ -4,6 +4,7 @@ use std::ops::Range;
 use serde::Serialize;
 
 use crate::correlation::MatchCorrelation;
+use crate::engines::RuleSetFingerprint;
 use crate::scoring::ThreatScoreboard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -38,7 +39,7 @@ impl fmt::Display for Severity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
     PromptInjection,
@@ -81,6 +82,28 @@ impl fmt::Display for Category {
 }
 
 impl Category {
+    /// Every `Category` variant, in declaration order. The category vocabulary
+    /// is the only **bounded** vocabulary — rule names and threat classes are
+    /// unbounded (custom rule metadata can mint new threat classes). Consumers
+    /// can enumerate categories without instantiating an engine.
+    pub const ALL: &'static [Category] = &[
+        Category::PromptInjection,
+        Category::HiddenContent,
+        Category::DataExfiltration,
+        Category::Jailbreak,
+        Category::DelimiterManipulation,
+        Category::InstructionOverride,
+        Category::RefusalSuppression,
+        Category::ResponseSteering,
+        Category::SecretProbing,
+        Category::ContextShift,
+        Category::IclExploitation,
+        Category::Coercion,
+        Category::RefusalBypass,
+        Category::SessionProtocol,
+        Category::Obfuscation,
+    ];
+
     pub fn from_str_loose(s: &str) -> Option<Category> {
         match s.to_lowercase().as_str() {
             "prompt_injection" => Some(Category::PromptInjection),
@@ -143,6 +166,10 @@ pub struct ScanReport {
     /// Cross-rule and cross-engine correlations fired during this scan.
     /// Empty when no correlation rules are configured or none matched.
     pub correlations: Vec<MatchCorrelation>,
+    /// Hex-encoded SHA-256 over the rule metadata of every loaded engine.
+    /// Empty for custom-engine `Shield`s and for raw constructor calls;
+    /// always populated when the scan went through `Shield::scan`.
+    pub rule_set_fingerprint: RuleSetFingerprint,
 }
 
 impl ScanReport {
@@ -151,6 +178,7 @@ impl ScanReport {
             findings,
             scores: None,
             correlations: Vec::new(),
+            rule_set_fingerprint: RuleSetFingerprint::default(),
         }
     }
 
@@ -160,12 +188,21 @@ impl ScanReport {
             findings,
             scores: if scores.is_empty() { None } else { Some(scores) },
             correlations: Vec::new(),
+            rule_set_fingerprint: RuleSetFingerprint::default(),
         }
     }
 
     /// Attach correlation results to an existing report.
     pub fn with_correlations(mut self, correlations: Vec<MatchCorrelation>) -> Self {
         self.correlations = correlations;
+        self
+    }
+
+    /// Attach the rule-set fingerprint to an existing report. Mirrors
+    /// [`Self::with_correlations`] — `Shield::scan` calls this last so the
+    /// returned report always carries a populated fingerprint.
+    pub fn with_rule_set_fingerprint(mut self, fp: RuleSetFingerprint) -> Self {
+        self.rule_set_fingerprint = fp;
         self
     }
 
@@ -183,6 +220,17 @@ impl ScanReport {
 pub trait Scanner: Send + Sync {
     fn name(&self) -> &'static str;
     fn scan(&self, input: &str) -> Vec<Finding>;
+
+    /// The single `Category` this scanner emits, when one applies.
+    ///
+    /// Default `None` so future scanners that don't have a single bound
+    /// category (e.g. multi-category heuristic scanners) need not override.
+    /// The 6 bundled regex-backed scanners override and return
+    /// `Some(self.inner.category)` so `SimpleEngine::rule_metadata` can
+    /// surface category provenance without downcasting `Box<dyn Scanner>`.
+    fn category(&self) -> Option<Category> {
+        None
+    }
 }
 
 /// Helper for scanners that are just a list of regex patterns.

@@ -32,6 +32,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Adding a new scanner**: Create `src/scanners/new_scanner.rs`, implement `Scanner` trait (use `RegexScanner` helper), register in `src/scanners/mod.rs::build()`, add `Category` variant in `src/scanner.rs`.
 
+## Local CLI Optimizations
+
+- `lst` is aliased to `lsd --tree --depth 2` for showing a shallow tree project and file layouts
+- `lsf` is aliased to `find . -type f -print0 | xargs -0 wc -l | sort -n` to show file word counts in a directory
+- `tokei` is available for broad quick project composition inspection
+- `fzf` and `ripgrep` are available, but often `tilth` is better
+
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
@@ -101,3 +109,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Never Use Latest Dependencies**: Try to keep to N - 1, and never use packages that are less than 30 days old.
 - **Pin Dependencies**: When using dependencies always pin and use the verification hash if possible.
 - **Thoroughly Review Everything**: Run security reviews, style reviews, architecture reviews and run tests regularly.
+
+## MCP Tools to Prioritize
+
+**tilth** Smarter code reading for agents
+
+
+## Context Management
+
+- **Continuity Maintenance**: The file `tasks/CONTINUITY.md` is for taking additional notes in preparation for compact.  Rewrite every time it is used.
+- **Optimal Context**: For the 256K models optimal context is < 120k, for the 1M models the optimal context is < 240k.
+- **Pause on Optimal Context Exhaustion**: Pause the dialogue and recommend preparing continuity notes and compacting when over the optimal levels mentioned above.

@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::correlation::bundled::bundled_rules_with_window;
 use crate::correlation::loader;
 use crate::correlation::{CorrelationEngine, CorrelationRule, EngineFindings};
-use crate::engines::{self, Engine};
+use crate::engines::{self, compute_fingerprint, Engine, RuleSetFingerprint};
 use crate::scanner::{Finding, ScanReport, Severity};
 
 /// Error returned when building a [`Shield`] fails.
@@ -13,12 +13,22 @@ use crate::scanner::{Finding, ScanReport, Severity};
 pub enum ShieldError {
     /// The requested engine could not be constructed.
     Engine(String),
+    /// A factory-built engine reported zero loaded rules. Typically means every
+    /// scanner was disabled, the configured rule directory is missing or empty,
+    /// or a feature gate excluded the bundled rules. Custom engines supplied via
+    /// [`ShieldBuilder::custom_engine`] are not subject to this check.
+    NoRulesLoaded { engine: String },
 }
 
 impl fmt::Display for ShieldError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Engine(msg) => write!(f, "engine error: {msg}"),
+            Self::NoRulesLoaded { engine } => write!(
+                f,
+                "engine '{engine}' has no rules loaded; check --disable list, \
+                 [rules] dir config, and bundled rule inclusion."
+            ),
         }
     }
 }
@@ -45,6 +55,7 @@ pub struct Shield {
     min_severity: Severity,
     disabled: Vec<String>,
     correlation_rules: Vec<CorrelationRule>,
+    rule_set_fingerprint: RuleSetFingerprint,
 }
 
 impl Shield {
@@ -83,7 +94,22 @@ impl Shield {
             fired
         };
 
-        ScanReport::from_scored(filtered, scores).with_correlations(correlations)
+        ScanReport::from_scored(filtered, scores)
+            .with_correlations(correlations)
+            .with_rule_set_fingerprint(self.rule_set_fingerprint.clone())
+    }
+
+    /// The fingerprint of the rule set this Shield is currently running.
+    /// Empty for custom-engine Shields (where introspection is opt-in).
+    pub fn rule_set_fingerprint(&self) -> &RuleSetFingerprint {
+        &self.rule_set_fingerprint
+    }
+
+    /// Borrow the underlying engine for read-only introspection
+    /// (`name`, `rule_metadata`, `categories`, `threat_classes`).
+    /// Used by `lcs rules` to describe the configured rule set.
+    pub fn engine(&self) -> &dyn Engine {
+        &*self.engine
     }
 }
 
@@ -151,7 +177,20 @@ impl ShieldBuilder {
         let cfg = self.config.unwrap_or_default();
         let engine = match self.custom_engine {
             Some(e) => e,
-            None => engines::build(&self.engine_name, &cfg).map_err(ShieldError::Engine)?,
+            None => {
+                let e = engines::build(&self.engine_name, &cfg).map_err(ShieldError::Engine)?;
+                // "No rules loaded" = both the addressable rule list and the
+                // introspection metadata are empty. Either signal alone is
+                // ambiguous: simple-engine doesn't override `rule_names`, and
+                // yara/syara may temporarily report empty `rule_metadata` if
+                // introspection is still being wired up.
+                if e.rule_names().is_empty() && e.rule_metadata().is_empty() {
+                    return Err(ShieldError::NoRulesLoaded {
+                        engine: e.name().to_string(),
+                    });
+                }
+                e
+            }
         };
 
         let enabled = self
@@ -186,11 +225,24 @@ impl ShieldBuilder {
             Vec::new()
         };
 
+        let metas = engine.rule_metadata();
+        let rule_set_fingerprint = if metas.is_empty() {
+            // Custom engines that don't expose introspection get the empty
+            // fingerprint; same for in-flight built-in engines whose
+            // rule_metadata isn't yet implemented. The factory path's
+            // NoRulesLoaded check has already vetted that real built-in
+            // engines have either rule_names or rule_metadata.
+            RuleSetFingerprint::default()
+        } else {
+            compute_fingerprint(&[(engine.name(), &metas)])
+        };
+
         Ok(Shield {
             engine,
             min_severity: self.min_severity,
             disabled: self.disabled,
             correlation_rules,
+            rule_set_fingerprint,
         })
     }
 }
@@ -257,6 +309,50 @@ mod tests {
     fn unknown_engine_returns_error() {
         let result = Shield::builder().engine("bogus").build();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn fingerprint_is_deterministic_across_builds() {
+        let s1 = Shield::builder().build().unwrap();
+        let s2 = Shield::builder().build().unwrap();
+        assert_eq!(s1.rule_set_fingerprint(), s2.rule_set_fingerprint());
+        assert_eq!(s1.rule_set_fingerprint().as_str().len(), 64);
+    }
+
+    #[test]
+    fn scan_report_carries_fingerprint() {
+        let shield = Shield::builder().build().unwrap();
+        let report = shield.scan("Hello, world!");
+        assert_eq!(&report.rule_set_fingerprint, shield.rule_set_fingerprint());
+        assert_eq!(report.rule_set_fingerprint.as_str().len(), 64);
+    }
+
+    #[test]
+    fn custom_engine_yields_empty_fingerprint() {
+        struct Empty;
+        impl Engine for Empty {
+            fn name(&self) -> &'static str { "empty" }
+            fn run(&self, _: &str, _: &[String]) -> Vec<Finding> { Vec::new() }
+        }
+        let shield = Shield::builder()
+            .custom_engine(Box::new(Empty))
+            .build()
+            .unwrap();
+        assert!(shield.rule_set_fingerprint().is_empty());
+    }
+
+    #[test]
+    fn custom_engine_with_no_rules_does_not_trigger_no_rules_loaded() {
+        // Regression guard: the NoRulesLoaded check must not fire on the
+        // custom-engine path. Test/library consumers who BYO engine may
+        // legitimately omit rule_metadata.
+        struct Empty;
+        impl Engine for Empty {
+            fn name(&self) -> &'static str { "empty" }
+            fn run(&self, _: &str, _: &[String]) -> Vec<Finding> { Vec::new() }
+        }
+        let result = Shield::builder().custom_engine(Box::new(Empty)).build();
+        assert!(result.is_ok());
     }
 
     #[test]

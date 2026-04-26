@@ -19,6 +19,8 @@ pub fn write_passthrough(input: &str, output_file: Option<&Path>) -> io::Result<
 /// `passthrough_mode`: when true, suppress the stdout summary line so the pipe stays clean.
 /// `show_scores`: when true, include threat scores in output.
 /// `show_correlations`: when true, include per-correlation detail blocks in text output.
+/// `show_fingerprint`: when true, append the rule-set fingerprint to text-format
+/// stderr output. JSON output always includes the fingerprint.
 /// JSON output always includes correlations when present, regardless of this flag.
 /// Findings details are still written to stderr in text format.
 pub fn output(
@@ -28,6 +30,7 @@ pub fn output(
     passthrough_mode: bool,
     show_scores: bool,
     show_correlations: bool,
+    show_fingerprint: bool,
 ) -> io::Result<()> {
     let filtered: Vec<_> = report
         .findings
@@ -41,6 +44,7 @@ pub fn output(
                 "clean": filtered.is_empty(),
                 "finding_count": filtered.len(),
                 "findings": filtered,
+                "rule_set_fingerprint": report.rule_set_fingerprint.as_str(),
             });
             if let Some(scores) = &report.scores {
                 filtered_report["threat_scores"] =
@@ -107,6 +111,9 @@ pub fn output(
                     writeln!(err, "  {class}: {score}")?;
                 }
                 writeln!(err)?;
+            }
+            if show_fingerprint {
+                writeln!(err, "rule_set_fingerprint: {}", report.rule_set_fingerprint)?;
             }
             if !passthrough_mode {
                 let stdout = io::stdout();

@@ -1,6 +1,6 @@
 use tracing::{debug, info};
 
-use super::Engine;
+use super::{Engine, RuleMeta};
 use crate::config::{Config, ScoringConfig};
 use crate::scanner::Finding;
 use crate::scoring::{apply_threshold_filter, ScoredCandidate, ThreatMeta, ThreatScoreboard};
@@ -27,6 +27,23 @@ impl SimpleEngine {
 impl Engine for SimpleEngine {
     fn name(&self) -> &'static str {
         "simple"
+    }
+
+    fn rule_metadata(&self) -> Vec<RuleMeta> {
+        scanners::build(&[])
+            .iter()
+            .map(|s| {
+                let category = s
+                    .category()
+                    .expect("simple-engine scanner must declare a category");
+                RuleMeta {
+                    name: s.name().to_string(),
+                    category,
+                    severity: None,
+                    threat_class: category.to_string(),
+                }
+            })
+            .collect()
     }
 
     fn run(&self, input: &str, disabled: &[String]) -> Vec<Finding> {

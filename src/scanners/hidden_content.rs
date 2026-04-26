@@ -42,6 +42,10 @@ impl Scanner for HiddenContentScanner {
         "hidden_content"
     }
 
+    fn category(&self) -> Option<Category> {
+        Some(Category::HiddenContent)
+    }
+
     fn scan(&self, input: &str) -> Vec<Finding> {
         let mut findings = Vec::new();
 

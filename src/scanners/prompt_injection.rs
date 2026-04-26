@@ -80,6 +80,10 @@ impl Scanner for PromptInjectionScanner {
         self.inner.name
     }
 
+    fn category(&self) -> Option<Category> {
+        Some(self.inner.category)
+    }
+
     fn scan(&self, input: &str) -> Vec<Finding> {
         self.inner.scan(input)
     }

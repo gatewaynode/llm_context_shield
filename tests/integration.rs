@@ -615,3 +615,158 @@ fn list_syara_prints_rule_names() {
         .success()
         .stdout(predicate::str::contains("prompt_injection_critical"));
 }
+
+// --- `lcs rules` subcommand (Phase 11.5b) ---
+
+fn is_64_lower_hex(s: &str) -> bool {
+    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
+
+#[test]
+fn rules_default_lists_engine_prefixed_rules() {
+    cmd()
+        .args(["rules"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("simple:prompt_injection  [prompt_injection]"));
+}
+
+#[test]
+fn rules_categories_emits_simple_set() {
+    cmd()
+        .args(["rules", "--categories"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prompt_injection"))
+        .stdout(predicate::str::contains("jailbreak"));
+}
+
+#[test]
+fn rules_categories_simple_engine_has_six_lines() {
+    let out = cmd()
+        .args(["rules", "--categories", "-e", "simple"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).expect("stdout is utf8");
+    let n = stdout.lines().count();
+    assert_eq!(
+        n, 6,
+        "simple engine should expose exactly 6 categories, got {n}: {stdout:?}"
+    );
+}
+
+#[test]
+fn rules_json_has_fingerprint_and_rules() {
+    let out = cmd()
+        .args(["rules", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).expect("stdout is utf8");
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("rules --json output is valid JSON");
+    let fp = v.get("fingerprint").and_then(|f| f.as_str()).expect("fingerprint key");
+    assert!(is_64_lower_hex(fp), "fingerprint not 64-char lower-hex: {fp}");
+    let rules = v.get("rules").and_then(|r| r.as_array()).expect("rules array");
+    assert!(!rules.is_empty(), "rules array empty");
+    let first = &rules[0];
+    for key in ["engine", "name", "category", "severity", "threat_class"] {
+        assert!(first.get(key).is_some(), "missing key {key} in {first}");
+    }
+}
+
+#[test]
+fn rules_fingerprint_is_single_hex_line() {
+    let out = cmd()
+        .args(["rules", "--fingerprint"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).expect("stdout is utf8");
+    let trimmed = stdout.trim_end_matches('\n');
+    assert!(!trimmed.contains('\n'), "fingerprint output had embedded newline: {stdout:?}");
+    assert!(is_64_lower_hex(trimmed), "fingerprint not 64-char lower-hex: {trimmed:?}");
+}
+
+#[test]
+fn rules_fingerprint_matches_scan_json_fingerprint() {
+    let rules_out = cmd()
+        .args(["rules", "--fingerprint"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let rules_fp = String::from_utf8(rules_out.stdout)
+        .expect("stdout is utf8")
+        .trim()
+        .to_string();
+
+    let scan_out = cmd()
+        .args(["scan", "-f", "json"])
+        .write_stdin("hello world")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let scan_json: serde_json::Value = serde_json::from_slice(&scan_out.stdout)
+        .expect("scan -f json output is valid JSON");
+    let scan_fp = scan_json
+        .get("rule_set_fingerprint")
+        .and_then(|f| f.as_str())
+        .expect("rule_set_fingerprint in scan JSON");
+
+    assert_eq!(
+        rules_fp, scan_fp,
+        "rules --fingerprint must equal scan JSON rule_set_fingerprint for the same config"
+    );
+}
+
+#[test]
+fn rules_unknown_engine_exits_two() {
+    cmd()
+        .args(["rules", "-e", "bogus"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Unknown engine"));
+}
+
+#[test]
+fn scan_show_fingerprint_emits_to_stderr() {
+    cmd()
+        .args(["scan", "--show-fingerprint"])
+        .write_stdin("hello, how are you today?")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No threats detected"))
+        .stderr(predicate::function(|s: &str| {
+            // Look for "rule_set_fingerprint: <64-hex>"
+            s.lines().any(|line| {
+                if let Some(rest) = line.strip_prefix("rule_set_fingerprint: ") {
+                    is_64_lower_hex(rest.trim())
+                } else {
+                    false
+                }
+            })
+        }));
+}
+
+#[test]
+fn scan_json_unconditionally_includes_fingerprint() {
+    let out = cmd()
+        .args(["scan", "-f", "json"])
+        .write_stdin("hello world")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let fp = v
+        .get("rule_set_fingerprint")
+        .and_then(|f| f.as_str())
+        .expect("rule_set_fingerprint key on scan JSON");
+    assert!(is_64_lower_hex(fp), "fingerprint not 64-char lower-hex: {fp}");
+}

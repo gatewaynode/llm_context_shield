@@ -1,7 +1,12 @@
+use std::collections::BTreeSet;
+
+use serde::Serialize;
+
 use crate::config::Config;
-use crate::scanner::Finding;
+use crate::scanner::{Category, Finding, Severity};
 use crate::scoring::ThreatScoreboard;
 
+pub mod fingerprint;
 pub mod simple;
 
 #[cfg(feature = "syara")]
@@ -10,6 +15,7 @@ pub mod syara;
 #[cfg(feature = "yara")]
 pub mod yara;
 
+pub use fingerprint::{compute as compute_fingerprint, RuleSetFingerprint};
 pub use simple::SimpleEngine;
 
 #[cfg(feature = "syara")]
@@ -17,6 +23,25 @@ pub use syara::SyaraEngine;
 
 #[cfg(feature = "yara")]
 pub use yara::YaraEngine;
+
+/// Introspection-shaped per-rule metadata.
+///
+/// A reshape of the data each engine already extracts from rule sources at
+/// scan time, surfaced through [`Engine::rule_metadata`] so external consumers
+/// (the `lcs rules` CLI surface, the rule-set fingerprint, programmatic
+/// harnesses) can describe the loaded rule set without running a scan.
+///
+/// `severity: None` means the rule does not declare a single bound severity —
+/// e.g. `SimpleEngine` regex scanners assign per-pattern severity at match
+/// time, so the rule itself doesn't carry one. YARA / SYARA rules with a
+/// `severity = "..."` meta field always emit `Some(_)`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuleMeta {
+    pub name: String,
+    pub category: Category,
+    pub severity: Option<Severity>,
+    pub threat_class: String,
+}
 
 /// Common interface for all scan engines.
 ///
@@ -37,6 +62,33 @@ pub trait Engine: Send + Sync {
         Vec::new()
     }
 
+    /// Per-rule introspection metadata for every rule loaded by this engine,
+    /// in the same order as [`rule_names`](Engine::rule_names).
+    ///
+    /// Default returns an empty vec for source compatibility with custom
+    /// engines (PRD §6.2). Built-in engines override and cache the metadata
+    /// at construction time so this is cheap to call.
+    fn rule_metadata(&self) -> Vec<RuleMeta> {
+        Vec::new()
+    }
+
+    /// Categories this engine can emit, derived from [`rule_metadata`].
+    ///
+    /// Returns the **union** across all loaded rules, sorted in `Category`
+    /// declaration order (matches [`Category::ALL`]).
+    fn categories(&self) -> BTreeSet<Category> {
+        self.rule_metadata().into_iter().map(|r| r.category).collect()
+    }
+
+    /// Threat classes this engine can emit, derived from [`rule_metadata`].
+    ///
+    /// Threat classes are an unbounded vocabulary — rule authors mint them
+    /// freely via the `threat_class` meta field — so the only honest answer
+    /// is what the running instance has loaded.
+    fn threat_classes(&self) -> BTreeSet<String> {
+        self.rule_metadata().into_iter().map(|r| r.threat_class).collect()
+    }
+
     /// Run scan and return both findings and threat scores.
     ///
     /// The default calls [`run`](Engine::run) and returns an empty scoreboard.
@@ -51,28 +103,42 @@ pub trait Engine: Send + Sync {
 /// Returns `Err` with a human-readable message for unrecognised names or
 /// engines whose Cargo feature is not compiled in. The `config` is consumed
 /// by engines that need it (rule discovery, Ollama URLs); `simple` ignores it.
+///
+/// Emits a `tracing::warn!` when the constructed engine has zero rules
+/// loaded. The hard error path lives at `ShieldBuilder::build` (per user
+/// decision); this warn is the soft signal for code paths that bypass
+/// `ShieldBuilder` (currently none in-tree; insurance for library consumers).
 pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<Box<dyn Engine>, String> {
-    match name {
-        "simple" => Ok(Box::new(SimpleEngine::new(config))),
+    let engine: Box<dyn Engine> = match name {
+        "simple" => Box::new(SimpleEngine::new(config)),
 
         #[cfg(feature = "yara")]
-        "yara" => YaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>),
+        "yara" => YaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>)?,
 
         #[cfg(not(feature = "yara"))]
-        "yara" => Err("Engine 'yara' requires the 'yara' Cargo feature. \
+        "yara" => return Err("Engine 'yara' requires the 'yara' Cargo feature. \
                         Rebuild with: cargo build --features yara"
             .into()),
 
         #[cfg(feature = "syara")]
-        "syara" => SyaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>),
+        "syara" => SyaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>)?,
 
         #[cfg(not(feature = "syara"))]
-        "syara" => Err("Engine 'syara' requires the 'syara' Cargo feature. \
+        "syara" => return Err("Engine 'syara' requires the 'syara' Cargo feature. \
                          Rebuild with: cargo build --features syara"
             .into()),
 
-        other => Err(format!("Unknown engine: {other}. Use: simple, yara, syara")),
+        other => return Err(format!("Unknown engine: {other}. Use: simple, yara, syara")),
+    };
+
+    if engine.rule_names().is_empty() && engine.rule_metadata().is_empty() {
+        tracing::warn!(
+            engine = %engine.name(),
+            "engine constructed with zero loaded rules"
+        );
     }
+
+    Ok(engine)
 }
 
 #[cfg(test)]

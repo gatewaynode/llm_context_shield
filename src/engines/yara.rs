@@ -8,7 +8,7 @@
 
 use yara_x::{Compiler, MetaValue, Rules};
 
-use super::Engine;
+use super::{Engine, RuleMeta};
 use crate::config::{Config, ScoringConfig};
 use crate::rules::discover;
 use crate::scanner::{Category, Finding, Severity};
@@ -17,6 +17,7 @@ use crate::scoring::{apply_threshold_filter, ScoredCandidate, ThreatMeta, Threat
 pub struct YaraEngine {
     rules: Rules,
     scoring: ScoringConfig,
+    rule_metadata_cache: Vec<RuleMeta>,
 }
 
 impl YaraEngine {
@@ -32,9 +33,13 @@ impl YaraEngine {
                 .add_source(src.as_str())
                 .map_err(|e| format!("YARA rule compilation error (source #{idx}): {e}"))?;
         }
+        let rules = compiler.build();
+        let rule_metadata_cache: Vec<RuleMeta> =
+            rules.iter().filter_map(|r| extract_rule_meta(&r)).collect();
         Ok(Self {
-            rules: compiler.build(),
+            rules,
             scoring: config.scoring.clone().unwrap_or_default(),
+            rule_metadata_cache,
         })
     }
 }
@@ -49,6 +54,10 @@ impl Engine for YaraEngine {
             .iter()
             .map(|r| r.identifier().to_string())
             .collect()
+    }
+
+    fn rule_metadata(&self) -> Vec<RuleMeta> {
+        self.rule_metadata_cache.clone()
     }
 
     fn run(&self, input: &str, disabled: &[String]) -> Vec<Finding> {
@@ -125,61 +134,96 @@ impl Engine for YaraEngine {
     }
 }
 
-fn extract_meta(rule: &yara_x::Rule) -> Option<(Category, Severity, String, ThreatMeta)> {
-    let mut category: Option<Category> = None;
-    let mut severity: Option<Severity> = None;
-    let mut description: Option<String> = None;
-    let mut threat_level: Option<i32> = None;
-    let mut threshold: Option<i32> = None;
-    let mut threat_class: Option<String> = None;
+/// Raw, optional fields parsed from a YARA rule's `meta:` block.
+/// Both `extract_meta` (scan-time) and `extract_rule_meta` (introspection)
+/// project from this struct so the parsing loop lives in one place.
+struct ParsedYaraMeta {
+    category: Option<Category>,
+    severity: Option<Severity>,
+    description: Option<String>,
+    threat_level: Option<i32>,
+    threshold: Option<i32>,
+    threat_class: Option<String>,
+}
+
+fn parse_meta(rule: &yara_x::Rule) -> ParsedYaraMeta {
+    let mut p = ParsedYaraMeta {
+        category: None,
+        severity: None,
+        description: None,
+        threat_level: None,
+        threshold: None,
+        threat_class: None,
+    };
 
     for (key, value) in rule.metadata() {
         match key {
             "category" => {
                 if let MetaValue::String(s) = value {
-                    category = Category::from_str_loose(s);
+                    p.category = Category::from_str_loose(s);
                 }
             }
             "severity" => {
                 if let MetaValue::String(s) = value {
-                    severity = Severity::from_str_loose(s);
+                    p.severity = Severity::from_str_loose(s);
                 }
             }
             "description" => {
                 if let MetaValue::String(s) = value {
-                    description = Some(s.to_string());
+                    p.description = Some(s.to_string());
                 }
             }
             "threat_level" => {
                 if let MetaValue::Integer(n) = value {
-                    threat_level = Some(n as i32);
+                    p.threat_level = Some(n as i32);
                 }
             }
             "threshold" => {
                 if let MetaValue::Integer(n) = value {
-                    threshold = Some(n as i32);
+                    p.threshold = Some(n as i32);
                 }
             }
             "threat_class" => {
                 if let MetaValue::String(s) = value {
-                    threat_class = Some(s.to_string());
+                    p.threat_class = Some(s.to_string());
                 }
             }
             _ => {}
         }
     }
 
-    let cat = category?;
-    let sev = severity?;
-    let desc = description.unwrap_or_else(|| rule.identifier().to_string());
+    p
+}
+
+fn extract_meta(rule: &yara_x::Rule) -> Option<(Category, Severity, String, ThreatMeta)> {
+    let p = parse_meta(rule);
+    let cat = p.category?;
+    let sev = p.severity?;
+    let desc = p.description.unwrap_or_else(|| rule.identifier().to_string());
     let cat_name = cat.to_string();
     let meta = ThreatMeta {
-        threat_level: threat_level.unwrap_or(1),
-        threshold: threshold.unwrap_or(0),
-        threat_class: threat_class.unwrap_or(cat_name),
+        threat_level: p.threat_level.unwrap_or(1),
+        threshold: p.threshold.unwrap_or(0),
+        threat_class: p.threat_class.unwrap_or(cat_name),
     };
 
     Some((cat, sev, desc, meta))
+}
+
+/// Introspection-shaped metadata extraction. Returns `None` for rules that
+/// would be skipped at scan time (missing or invalid category/severity), so
+/// the introspection surface and the scan-time surface stay consistent.
+fn extract_rule_meta(rule: &yara_x::Rule) -> Option<RuleMeta> {
+    let p = parse_meta(rule);
+    let category = p.category?;
+    let severity = p.severity?;
+    let threat_class = p.threat_class.unwrap_or_else(|| category.to_string());
+    Some(RuleMeta {
+        name: rule.identifier().to_string(),
+        category,
+        severity: Some(severity),
+        threat_class,
+    })
 }
 
 #[cfg(test)]
@@ -189,9 +233,13 @@ mod tests {
     fn engine_from_source(src: &str) -> YaraEngine {
         let mut compiler = Compiler::new();
         compiler.add_source(src).expect("inline rule compiles");
+        let rules = compiler.build();
+        let rule_metadata_cache: Vec<RuleMeta> =
+            rules.iter().filter_map(|r| extract_rule_meta(&r)).collect();
         YaraEngine {
-            rules: compiler.build(),
+            rules,
             scoring: ScoringConfig::default(),
+            rule_metadata_cache,
         }
     }
 
@@ -315,6 +363,92 @@ mod tests {
         assert_eq!(meta.threat_level, 5);
         assert_eq!(meta.threshold, 3);
         assert_eq!(meta.threat_class, "prompt_hijack");
+    }
+
+    #[test]
+    fn extract_rule_meta_returns_introspection_subset() {
+        let src = r#"
+            rule introspect_test {
+                meta:
+                    category     = "jailbreak"
+                    severity     = "high"
+                    threat_class = "social_engineering"
+                strings:
+                    $s1 = "DAN mode"
+                condition:
+                    any of them
+            }
+        "#;
+        let mut compiler = Compiler::new();
+        compiler.add_source(src).expect("compiles");
+        let rules = compiler.build();
+        let rule = rules.iter().next().expect("one rule");
+        let meta = extract_rule_meta(&rule).expect("introspection meta present");
+        assert_eq!(meta.name, "introspect_test");
+        assert_eq!(meta.category, Category::Jailbreak);
+        assert_eq!(meta.severity, Some(Severity::High));
+        assert_eq!(meta.threat_class, "social_engineering");
+    }
+
+    #[test]
+    fn extract_rule_meta_defaults_threat_class_to_category() {
+        let src = r#"
+            rule no_class {
+                meta:
+                    category = "prompt_injection"
+                    severity = "critical"
+                strings:
+                    $s1 = "x"
+                condition:
+                    any of them
+            }
+        "#;
+        let mut compiler = Compiler::new();
+        compiler.add_source(src).expect("compiles");
+        let rules = compiler.build();
+        let rule = rules.iter().next().expect("one rule");
+        let meta = extract_rule_meta(&rule).expect("meta present");
+        assert_eq!(meta.threat_class, "prompt_injection");
+    }
+
+    #[test]
+    fn extract_rule_meta_skips_rules_missing_category() {
+        let src = r#"
+            rule no_category {
+                meta:
+                    severity = "high"
+                strings:
+                    $s1 = "x"
+                condition:
+                    any of them
+            }
+        "#;
+        let mut compiler = Compiler::new();
+        compiler.add_source(src).expect("compiles");
+        let rules = compiler.build();
+        let rule = rules.iter().next().expect("one rule");
+        assert!(extract_rule_meta(&rule).is_none());
+    }
+
+    #[test]
+    fn rule_metadata_matches_rule_names_order() {
+        let src = r#"
+            rule a {
+                meta: category = "jailbreak"  severity = "high"
+                strings: $s = "x"  condition: any of them
+            }
+            rule b {
+                meta: category = "prompt_injection"  severity = "critical"
+                strings: $s = "y"  condition: any of them
+            }
+        "#;
+        let engine = engine_from_source(src);
+        let names = engine.rule_names();
+        let metas = engine.rule_metadata();
+        assert_eq!(names.len(), metas.len());
+        for (name, meta) in names.iter().zip(metas.iter()) {
+            assert_eq!(name, &meta.name);
+        }
     }
 
     #[test]
