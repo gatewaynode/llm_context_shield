@@ -2,6 +2,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use crate::scanner::{ScanReport, Severity};
+use crate::scoring::ThreatScoreboard;
 
 /// Write `input` to `output_file` (or stdout if `None`). Called only when scan is clean.
 pub fn write_passthrough(input: &str, output_file: Option<&Path>) -> io::Result<()> {
@@ -46,10 +47,19 @@ pub fn output(
                 "findings": filtered,
                 "rule_set_fingerprint": report.rule_set_fingerprint.as_str(),
             });
-            if let Some(scores) = &report.scores {
-                filtered_report["threat_scores"] =
-                    serde_json::to_value(scores).unwrap_or_default();
-            }
+            // Always emit `threat_scores` so downstream consumers see a stable
+            // top-level shape. Empty scoreboard serialises to
+            // `{"class_scores": {}, "cumulative": 0}`.
+            let scores_owned;
+            let scores = match &report.scores {
+                Some(s) => s,
+                None => {
+                    scores_owned = ThreatScoreboard::default();
+                    &scores_owned
+                }
+            };
+            filtered_report["threat_scores"] =
+                serde_json::to_value(scores).unwrap_or_default();
             if !report.correlations.is_empty() {
                 filtered_report["correlations"] =
                     serde_json::to_value(&report.correlations).unwrap_or_default();

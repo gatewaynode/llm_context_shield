@@ -862,3 +862,35 @@ fn rules_json_includes_version_threat_level_threshold() {
         assert!(tl >= 0 && th >= 0, "non-negative scoring fields, got tl={tl} th={th}");
     }
 }
+
+#[test]
+fn scan_json_clean_includes_empty_threat_scores() {
+    let out = cmd()
+        .args(["scan", "-f", "json"])
+        .write_stdin("Just a normal question about Rust.")
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(v.get("clean").and_then(|c| c.as_bool()), Some(true));
+    let scores = v
+        .get("threat_scores")
+        .expect("threat_scores key present on clean scan");
+    assert!(
+        scores.is_object(),
+        "threat_scores must be an object, got {scores}"
+    );
+    let class_scores = scores
+        .get("class_scores")
+        .expect("class_scores key on threat_scores");
+    assert!(
+        class_scores.is_object() && class_scores.as_object().unwrap().is_empty(),
+        "class_scores must be empty object, got {class_scores}"
+    );
+    let cumulative = scores
+        .get("cumulative")
+        .and_then(|c| c.as_i64())
+        .expect("cumulative integer on threat_scores");
+    assert_eq!(cumulative, 0);
+}

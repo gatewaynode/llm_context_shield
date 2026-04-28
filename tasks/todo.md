@@ -26,27 +26,29 @@ Expose the **currently loaded rule set** of a built `Shield` instance — catego
 
 ### 11.5a — `Engine::rule_metadata` and rule-set fingerprint
 
-- [ ] Add `RuleMeta` struct in `src/engines/mod.rs`:
+**✅ Complete (uncommitted on top of `1bb893a`).** 335/335 tests pass at 11.5a freeze; canonical post-mortem in `tasks/CONTINUITY.md` "Phase 11.5a progress". Note: `RuleMeta` derives `Serialize, Clone, Debug, PartialEq, Eq` — `Hash` was dropped from the spec because the fingerprint hashes canonical JSON rather than sorting `Hash` outputs (deterministic across rustc updates, more auditable). `Engine::build` warns on zero loaded rules; the hard `ShieldError::NoRulesLoaded` lives at `ShieldBuilder::build` per the architectural-decision log.
+
+- [x] Add `RuleMeta` struct in `src/engines/mod.rs`:
   - `name: String` — rule name, matching `Engine::rule_names()`.
   - `category: Category` — category emitted when this rule fires.
   - `severity: Option<Severity>` — when statically determinable from rule metadata; `None` for rules whose severity is decided at match time (document the convention in 11.5d).
   - `threat_class: String` — scoreboard class string (defaults to `category.to_string()` when not overridden in rule metadata).
   - Derive `Serialize`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash` (the last two so the fingerprint computation can sort and hash deterministically).
-- [ ] Extend `Engine` trait with `fn rule_metadata(&self) -> Vec<RuleMeta>`:
+- [x] Extend `Engine` trait with `fn rule_metadata(&self) -> Vec<RuleMeta>`:
   - **Default impl** returns `Vec::new()` — preserves source compatibility for custom engines (PRD §6.2). Custom engines opt in by overriding.
   - `SimpleEngine`: walk `scanners::build(&[])`, emit one `RuleMeta` per active scanner. `category` from the scanner; `threat_class` from `category.to_string()`; `severity` left `None` (regex scanners assign per-pattern severity at match time).
   - `YaraEngine`: walk loaded `Rules`, run existing `extract_meta` per rule, build `RuleMeta`. The data already exists — this is a reshape, not new parsing.
   - `SyaraEngine`: same as yara via its `extract_meta`.
-- [ ] Default-impl helpers on `Engine`:
+- [x] Default-impl helpers on `Engine`:
   - `fn categories(&self) -> BTreeSet<Category>` — derived from `rule_metadata`.
   - `fn threat_classes(&self) -> BTreeSet<String>` — derived from `rule_metadata`.
-- [ ] Extend `Category` with `pub const ALL: &[Category]` — enumerate without instantiating an engine. Order is the existing enum declaration order.
-- [ ] Add `RuleSetFingerprint` (newtype around `String`, hex-encoded SHA-256):
+- [x] Extend `Category` with `pub const ALL: &[Category]` — enumerate without instantiating an engine. Order is the existing enum declaration order.
+- [x] Add `RuleSetFingerprint` (newtype around `String`, hex-encoded SHA-256):
   - Computed by collecting every loaded engine's `rule_metadata()`, sorting tuples of `(engine_name, RuleMeta)` deterministically by `(engine_name, name)`, serialising to a stable canonical form, hashing.
   - One combined fingerprint covers the whole `Shield` instance. Per-engine breakdown can be added non-breakingly later if real audit needs surface it.
   - Add `sha2` dependency (mature, widely used, satisfies CLAUDE.md N-1 and 30-day-minimum stance).
-- [ ] Add `rule_set_fingerprint: RuleSetFingerprint` to `ScanReport` — populated by `Shield::scan` from the configured engine. Empty-string-fingerprint sentinel for the rare case of an engine with zero loaded rules; document the sentinel.
-- [ ] Unit tests:
+- [x] Add `rule_set_fingerprint: RuleSetFingerprint` to `ScanReport` — populated by `Shield::scan` from the configured engine. Empty-string-fingerprint sentinel for the rare case of an engine with zero loaded rules; document the sentinel.
+- [x] Unit tests:
   - `SimpleEngine::categories()` returns the 6 simple-scanner categories.
   - `YaraEngine::categories()` (feature-gated) matches the bundled yara rule set's declared categories.
   - `Engine::rule_metadata().iter().map(|r| &r.name).eq(Engine::rule_names().iter())` — order and names align.
@@ -55,19 +57,21 @@ Expose the **currently loaded rule set** of a built `Shield` instance — catego
 
 ### 11.5b — `lcs rules` CLI surface
 
-- [ ] New subcommand `lcs rules [-e <engine>] [--categories | --threat-classes | --json] [--fingerprint]`:
+**✅ Complete (uncommitted).** 344/344 tests at 11.5b freeze; post-mortem in `tasks/CONTINUITY.md` "Phase 11.5b summary". `Command::Rules` uses clap `group = "rules_view"` for mutual-exclusion of `--categories | --threat-classes | --json | --fingerprint`. `Shield::engine()` accessor added to expose the resolved engine to the rules handler. `--show-fingerprint` is a flag on `Command::Scan` (text path); JSON path always emits `rule_set_fingerprint`.
+
+- [x] New subcommand `lcs rules [-e <engine>] [--categories | --threat-classes | --json] [--fingerprint]`:
   - **`lcs rules`** (no flags): print every loaded rule, one per line, formatted as `<engine>:<rule_name>  [<category>]`. Default human-friendly view.
   - **`--categories`**: print the category set the configured shield can emit, snake_case, one per line. Without `-e`, the union across all loaded engines; with `-e`, that engine's subset.
   - **`--threat-classes`**: same shape but threat classes.
   - **`--json`**: emit `{"fingerprint": "<hex>", "rules": [<RuleMeta+engine>...]}`. Scoped by `-e` if provided.
   - **`--fingerprint`**: print just the rule-set fingerprint as a single hex line. Cheap audit-trail capture for shell scripts.
-- [ ] **Config flow consistency**: `lcs rules` constructs the same `Shield` that `lcs scan` would (same `Config` load path, same `--config` overrides, same `[rules] dir`, same `[correlation] custom_rules`). The whole point of Priori 2 is that schema is a property of the configured instance — `lcs rules` cannot bypass that flow without lying.
-- [ ] Output ordering: deterministic. Rules sorted by `(engine, name)`. Categories follow `Category::ALL` declaration order.
-- [ ] Exit codes: `0` on success, `2` on unrecognised engine or config error (matches existing `lcs list -e <bad>` behaviour).
-- [ ] Embed fingerprint in scan output too:
+- [x] **Config flow consistency**: `lcs rules` constructs the same `Shield` that `lcs scan` would (same `Config` load path, same `--config` overrides, same `[rules] dir`, same `[correlation] custom_rules`). The whole point of Priori 2 is that schema is a property of the configured instance — `lcs rules` cannot bypass that flow without lying.
+- [x] Output ordering: deterministic. Rules sorted by `(engine, name)`. Categories follow `Category::ALL` declaration order.
+- [x] Exit codes: `0` on success, `2` on unrecognised engine or config error (matches existing `lcs list -e <bad>` behaviour).
+- [x] Embed fingerprint in scan output too:
   - JSON: top-level `"rule_set_fingerprint": "<hex>"` on every `lcs scan` output.
   - Text: optional, gated behind `--show-fingerprint` flag (off by default — keeps human output uncluttered).
-- [ ] Integration tests in `tests/integration.rs`:
+- [x] Integration tests in `tests/integration.rs`:
   - `lcs rules` lists loaded rules with engine prefix.
   - `lcs rules --categories` returns the union of loaded engines' categories.
   - `lcs rules --categories -e simple` returns the 6-category simple subset.
@@ -78,20 +82,22 @@ Expose the **currently loaded rule set** of a built `Shield` instance — catego
 
 ### 11.5c — Finding provenance: rule_name + engine on Finding
 
+**✅ Complete (uncommitted).** 350/350 tests at 11.5c freeze; post-mortem in `tasks/CONTINUITY.md` "Phase 11.5c summary". `Finding::new` keeps its existing signature; new fields default to empty-string and the `with_rule_name` / `with_engine` builders chain on. The text output emits an indented `rule: <name> (engine: <eng>)` line in the per-finding stderr block, but only when `rule_name` is non-empty (preserves shape for legacy / custom-engine fixtures). `MatchCorrelation` propagation is automatic — its `Vec<Finding>` carries the widened fields without code change; verified by the new `correlation_propagates_finding_provenance` test.
+
 The harness can validate categories against `lcs rules`, but per-finding traceability still requires string-matching the description. Widening `Finding` closes Priori 1 at the per-result level.
 
-- [ ] Add to `Finding` (`src/scanner.rs:106`):
+- [x] Add to `Finding` (`src/scanner.rs:106`):
   - `rule_name: String` — the rule that fired (matches `RuleMeta.name`).
   - `engine: String` — the engine that produced this finding (matches `EngineFindings.engine`).
-- [ ] Update construction sites:
+- [x] Update construction sites:
   - `RegexScanner::scan` — pass scanner name as `rule_name`; engine is `"simple"` (or `Finding::new` takes it from a constructor parameter; design choice in plan-mode).
   - `YaraEngine` — already iterates rules, plumb `rule.identifier()` and `"yara"` through.
   - `SyaraEngine` — same with `"syara"`.
   - Custom engines using `Finding::new` get a sensible default or are required to populate (the trait default keeps source compatibility, but JSON output will surface empty strings; document).
-- [ ] JSON output: additive — every existing field stays; `rule_name` and `engine` are new fields per finding. No consumer that reads `category` / `severity` / `description` breaks.
-- [ ] Text output: include `rule_name` in the per-finding stderr block, optional in summary. Decide formatting in plan-mode.
-- [ ] Update existing tests in `src/scanner.rs`, `src/engines/yara.rs`, `src/engines/syara.rs`, `tests/integration.rs` to assert the new fields are populated and consistent with `Engine::rule_metadata()`.
-- [ ] Update `MatchCorrelation` carriers — they hold `Vec<Finding>` already, so the widened fields propagate without further work; just verify the JSON output of correlations now includes per-contributing-finding rule provenance.
+- [x] JSON output: additive — every existing field stays; `rule_name` and `engine` are new fields per finding. No consumer that reads `category` / `severity` / `description` breaks.
+- [x] Text output: include `rule_name` in the per-finding stderr block, optional in summary. Decide formatting in plan-mode.
+- [x] Update existing tests in `src/scanner.rs`, `src/engines/yara.rs`, `src/engines/syara.rs`, `tests/integration.rs` to assert the new fields are populated and consistent with `Engine::rule_metadata()`.
+- [x] Update `MatchCorrelation` carriers — they hold `Vec<Finding>` already, so the widened fields propagate without further work; just verify the JSON output of correlations now includes per-contributing-finding rule provenance.
 
 ### 11.5d — Documentation, hand-offs, and forward seeding
 
@@ -124,22 +130,21 @@ Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) a
 
 ### 11.6a — Extend `RuleMeta` with version/threat_level/threshold
 
-- [ ] Add three fields to `RuleMeta` (`src/engines/mod.rs`):
+**✅ Complete (uncommitted; ships as `lcs 0.5.2` globally installed 2026-04-26).** 359/359 tests at 11.6a freeze (was 350; +9 new — 3 fingerprint sensitivity, 2 yara round-trip + defaults, 2 syara round-trip + defaults, 1 simple defaults, 1 integration JSON shape). Clippy clean. New default-config fingerprint `4c6cd18ac803ea92cb145a143b6e1629b30ee655e59afa6f60a65f150c11469a` (was `2d7806f7…1751e5d3`); the change is the desired audit signal, see fingerprint contract below. Per the 11.6a plan-mode discovery, **the bundled rule-edit pass was dropped**: every YARA + SYARA rule already declared `version`, `threat_level`, and `threshold` in its `meta:` block (audited by counting meta-key occurrences vs. rule count across all 32 files). Existing values (`"1"` and `"2"`) round-trip into `RuleMeta.version` as-is — no rule files modified by this phase.
+
+- [x] Add three fields to `RuleMeta` (`src/engines/mod.rs`):
   - `version: Option<String>` — `Some("...")` when the rule's metadata declares it, `None` otherwise. Convention is semver but the field is opaque to lcs (string round-trip only).
   - `threat_level: i32` — what one match contributes to the rule's `threat_class` score. Default `1` (matches `ThreatMeta::with_defaults`).
   - `threshold: i32` — minimum accumulated class score required for the rule to fire. Default `0` (always-fire).
-- [ ] Update introspection construction sites:
+- [x] Update introspection construction sites:
   - `SimpleEngine::rule_metadata` — `version = None`, `threat_level = 1`, `threshold = 0` for every regex scanner. Document: simple-engine rules are compiled in; per-rule version is meaningless.
   - `YaraEngine::extract_rule_meta` — extend `ParsedYaraMeta` to capture `version`; reshape so introspection reads `version`/`threat_level`/`threshold` from the same `parse_meta` output the scan-time `extract_meta` uses. Single parsing path.
   - `SyaraEngine::build_rule_metadata` — extend `parse_source_meta` similarly so introspection and scan-time both project from one parser.
-- [ ] Bundled rule edits (one line each):
-  - Add `version = "0.5"` (current ship version) to every bundled `.yar` file's `meta:` block.
-  - Add `version = "0.5"` to every bundled `.syara` file's `meta:` block.
-  - Author convention captured in 11.6c docs.
-- [ ] Fingerprint contract: the new fields participate in the canonical-JSON sort fed to `RuleSetFingerprint::compute`. Bumping `threshold` in any rule changes the fingerprint — that is the desired behaviour (audit trails should be sensitive to scoring-metadata changes, not just identity).
-- [ ] JSON shape (`lcs rules --json` and `lcs scan`-side per-finding payload remain stable): `RuleMeta` gains three additive keys. No existing consumer breaks; `version` is `null` for SimpleEngine and any rule that didn't opt in.
-- [ ] Text shape (`lcs rules` default view): unchanged — keeps the human view minimal. Authors who want the full picture pipe through `--json`.
-- [ ] Unit tests:
+- [x] ~~Bundled rule edits (one line each):~~ **Dropped — every bundled rule already declares `version`, `threat_level`, and `threshold`** (audit during plan-mode confirmed 79 rules across 32 files, all complete). Existing values (`"1"`, `"2"`) preserved verbatim. Author convention to be captured in 11.6c docs against the existing meta shape.
+- [x] Fingerprint contract: the new fields participate in the canonical-JSON sort fed to `RuleSetFingerprint::compute`. Bumping `threshold` in any rule changes the fingerprint — that is the desired behaviour (audit trails should be sensitive to scoring-metadata changes, not just identity).
+- [x] JSON shape (`lcs rules --json` and `lcs scan`-side per-finding payload remain stable): `RuleMeta` gains three additive keys. No existing consumer breaks; `version` is `null` for SimpleEngine and any rule that didn't opt in.
+- [x] Text shape (`lcs rules` default view): unchanged — keeps the human view minimal. Authors who want the full picture pipe through `--json`.
+- [x] Unit tests:
   - YARA + SYARA rules with explicit `version`/`threat_level`/`threshold` round-trip into `RuleMeta`.
   - Defaults: rules without these meta keys produce `version: None`, `threat_level: 1`, `threshold: 0`.
   - `SimpleEngine::rule_metadata` always emits the documented defaults.
