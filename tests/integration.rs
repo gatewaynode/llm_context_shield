@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 
@@ -893,4 +895,157 @@ fn scan_json_clean_includes_empty_threat_scores() {
         .and_then(|c| c.as_i64())
         .expect("cumulative integer on threat_scores");
     assert_eq!(cumulative, 0);
+}
+
+// --- rules --all (cross-engine view) ---
+
+#[test]
+fn rules_all_long_and_short_flags_match() {
+    let long = cmd().args(["rules", "--all"]).assert().success().get_output().clone();
+    let short = cmd().args(["rules", "-a"]).assert().success().get_output().clone();
+    assert_eq!(
+        long.stdout, short.stdout,
+        "`rules --all` and `rules -a` should produce identical stdout"
+    );
+}
+
+#[test]
+fn rules_all_default_json_has_fingerprint_and_engines() {
+    let out = cmd()
+        .args(["rules", "--all"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("rules --all output is valid JSON");
+
+    let fp = v
+        .get("fingerprint")
+        .and_then(|f| f.as_str())
+        .expect("fingerprint string");
+    assert_eq!(fp.len(), 64, "fingerprint must be 64 hex chars, got {fp}");
+    assert!(
+        fp.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "fingerprint must be lowercase hex, got {fp}"
+    );
+
+    let engines = v
+        .get("engines")
+        .and_then(|e| e.as_object())
+        .expect("engines object");
+
+    let simple_arr = engines
+        .get("simple")
+        .and_then(|s| s.as_array())
+        .expect("engines.simple array");
+    assert!(!simple_arr.is_empty(), "engines.simple must be non-empty");
+
+    for entry in simple_arr {
+        for key in ["engine", "name", "category", "version", "threat_level", "threshold"] {
+            assert!(
+                entry.get(key).is_some(),
+                "rule entry missing key '{key}': {entry}"
+            );
+        }
+    }
+
+    // With cli,yara,syara features compiled in, all three engine keys present + non-empty.
+    #[cfg(all(feature = "yara", feature = "syara"))]
+    {
+        for name in ["yara", "syara"] {
+            let arr = engines
+                .get(name)
+                .and_then(|s| s.as_array())
+                .unwrap_or_else(|| panic!("engines.{name} array missing"));
+            assert!(!arr.is_empty(), "engines.{name} must be non-empty");
+        }
+    }
+}
+
+#[test]
+fn rules_all_engines_keys_are_alphabetical() {
+    let out = cmd()
+        .args(["rules", "--all"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let engines = v.get("engines").and_then(|e| e.as_object()).expect("engines object");
+    let keys: Vec<&str> = engines.keys().map(|k| k.as_str()).collect();
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted, "engines keys must be alphabetical, got {keys:?}");
+}
+
+#[test]
+fn rules_all_with_engine_flag_exits_two() {
+    let out = cmd()
+        .args(["rules", "--all", "-e", "simple"])
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cannot be used with") || stderr.contains("conflicts"),
+        "expected clap mutual-exclusion error, got: {stderr}"
+    );
+}
+
+#[test]
+fn rules_all_fingerprint_emits_single_hex_line() {
+    let out = cmd()
+        .args(["rules", "--all", "--fingerprint"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).expect("stdout is utf8");
+    let trimmed = stdout.trim_end_matches('\n');
+    assert!(
+        !trimmed.contains('\n'),
+        "expected single line of output, got:\n{stdout}"
+    );
+    assert_eq!(trimmed.len(), 64, "fingerprint must be 64 hex chars, got {trimmed}");
+    assert!(
+        trimmed.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "fingerprint must be lowercase hex, got {trimmed}"
+    );
+}
+
+#[test]
+fn rules_all_categories_emits_cross_engine_union() {
+    let all_out = cmd()
+        .args(["rules", "--all", "--categories"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let simple_out = cmd()
+        .args(["rules", "--categories", "-e", "simple"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+
+    let all_cats: BTreeSet<String> = String::from_utf8_lossy(&all_out.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let simple_cats: BTreeSet<String> = String::from_utf8_lossy(&simple_out.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    assert!(
+        simple_cats.is_subset(&all_cats),
+        "rules --all --categories must contain every category from rules --categories -e simple;\
+         missing: {missing:?}",
+        missing = simple_cats.difference(&all_cats).collect::<Vec<_>>()
+    );
 }

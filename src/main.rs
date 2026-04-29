@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::process;
 
@@ -9,7 +10,7 @@ use llm_context_shield::config::Config;
 use llm_context_shield::engines::{self, RuleMeta};
 use llm_context_shield::input::read_input;
 use llm_context_shield::report::{output, write_passthrough};
-use llm_context_shield::scanner::Severity;
+use llm_context_shield::scanner::{Category, Severity};
 use llm_context_shield::scanners;
 use llm_context_shield::shield::Shield;
 
@@ -216,62 +217,134 @@ fn main() {
         }
         Command::Rules {
             engine,
+            all,
             categories,
             threat_classes,
             json,
             fingerprint,
         } => {
-            let engine_name = engine
-                .or_else(|| config.scan.as_ref().and_then(|s| s.engine.clone()))
-                .unwrap_or_else(|| "simple".to_string());
-
-            let shield = Shield::builder()
-                .engine(&engine_name)
-                .config(config)
-                .build()
-                .unwrap_or_else(|err| {
-                    error!(value = %engine_name, "rules: shield build failed");
-                    eprintln!("{err}");
-                    process::exit(2);
-                });
-
-            let engine_label = shield.engine().name();
-            let metas = shield.engine().rule_metadata();
-
-            if fingerprint {
-                println!("{}", shield.rule_set_fingerprint());
-            } else if categories {
-                for c in shield.engine().categories() {
-                    println!("{c}");
-                }
-            } else if threat_classes {
-                for tc in shield.engine().threat_classes() {
-                    println!("{tc}");
-                }
-            } else if json {
-                let mut sorted: Vec<&RuleMeta> = metas.iter().collect();
-                sorted.sort_by(|a, b| a.name.cmp(&b.name));
-                let entries: Vec<RuleEntry<'_>> = sorted
+            if all {
+                let engine_names = ["simple", "syara", "yara"];
+                let built: Vec<(&str, Box<dyn engines::Engine>)> = engine_names
                     .iter()
-                    .map(|m| RuleEntry { engine: engine_label, meta: m })
+                    .map(|name| {
+                        engines::build(name, &config)
+                            .map(|e| (*name, e))
+                            .unwrap_or_else(|err| {
+                                error!(value = %name, "rules --all: engine build failed");
+                                eprintln!("{name}: {err}");
+                                process::exit(2);
+                            })
+                    })
                     .collect();
-                let payload = serde_json::json!({
-                    "fingerprint": shield.rule_set_fingerprint().as_str(),
-                    "rules": entries,
-                });
-                let stdout = io::stdout();
-                let mut out = stdout.lock();
-                if let Err(e) = serde_json::to_writer_pretty(&mut out, &payload) {
-                    error!(error = %e, "rules: JSON serialisation failed");
-                    eprintln!("JSON serialisation failed: {e}");
-                    process::exit(2);
+
+                let metas: Vec<(&str, Vec<RuleMeta>)> = built
+                    .iter()
+                    .map(|(name, e)| (*name, e.rule_metadata()))
+                    .collect();
+                let fp_input: Vec<(&str, &[RuleMeta])> = metas
+                    .iter()
+                    .map(|(n, m)| (*n, m.as_slice()))
+                    .collect();
+                let fp = engines::compute_fingerprint(&fp_input);
+
+                if fingerprint {
+                    println!("{fp}");
+                } else if categories {
+                    let mut union: BTreeSet<Category> = BTreeSet::new();
+                    for (_, e) in &built {
+                        union.extend(e.categories());
+                    }
+                    for c in Category::ALL {
+                        if union.contains(c) {
+                            println!("{c}");
+                        }
+                    }
+                } else if threat_classes {
+                    let mut union: BTreeSet<String> = BTreeSet::new();
+                    for (_, e) in &built {
+                        union.extend(e.threat_classes());
+                    }
+                    for tc in union {
+                        println!("{tc}");
+                    }
+                } else {
+                    let mut engines_map: BTreeMap<&str, Vec<RuleEntry<'_>>> = BTreeMap::new();
+                    for (name, m) in &metas {
+                        let mut sorted: Vec<&RuleMeta> = m.iter().collect();
+                        sorted.sort_by(|a, b| a.name.cmp(&b.name));
+                        let entries: Vec<RuleEntry<'_>> = sorted
+                            .iter()
+                            .map(|meta| RuleEntry { engine: name, meta })
+                            .collect();
+                        engines_map.insert(*name, entries);
+                    }
+                    let payload = serde_json::json!({
+                        "fingerprint": fp.as_str(),
+                        "engines": engines_map,
+                    });
+                    let stdout = io::stdout();
+                    let mut out = stdout.lock();
+                    if let Err(e) = serde_json::to_writer_pretty(&mut out, &payload) {
+                        error!(error = %e, "rules --all: JSON serialisation failed");
+                        eprintln!("JSON serialisation failed: {e}");
+                        process::exit(2);
+                    }
+                    let _ = writeln!(out);
                 }
-                let _ = writeln!(out);
             } else {
-                let mut sorted: Vec<&RuleMeta> = metas.iter().collect();
-                sorted.sort_by(|a, b| a.name.cmp(&b.name));
-                for m in sorted {
-                    println!("{engine_label}:{name}  [{cat}]", name = m.name, cat = m.category);
+                let engine_name = engine
+                    .or_else(|| config.scan.as_ref().and_then(|s| s.engine.clone()))
+                    .unwrap_or_else(|| "simple".to_string());
+
+                let shield = Shield::builder()
+                    .engine(&engine_name)
+                    .config(config)
+                    .build()
+                    .unwrap_or_else(|err| {
+                        error!(value = %engine_name, "rules: shield build failed");
+                        eprintln!("{err}");
+                        process::exit(2);
+                    });
+
+                let engine_label = shield.engine().name();
+                let metas = shield.engine().rule_metadata();
+
+                if fingerprint {
+                    println!("{}", shield.rule_set_fingerprint());
+                } else if categories {
+                    for c in shield.engine().categories() {
+                        println!("{c}");
+                    }
+                } else if threat_classes {
+                    for tc in shield.engine().threat_classes() {
+                        println!("{tc}");
+                    }
+                } else if json {
+                    let mut sorted: Vec<&RuleMeta> = metas.iter().collect();
+                    sorted.sort_by(|a, b| a.name.cmp(&b.name));
+                    let entries: Vec<RuleEntry<'_>> = sorted
+                        .iter()
+                        .map(|m| RuleEntry { engine: engine_label, meta: m })
+                        .collect();
+                    let payload = serde_json::json!({
+                        "fingerprint": shield.rule_set_fingerprint().as_str(),
+                        "rules": entries,
+                    });
+                    let stdout = io::stdout();
+                    let mut out = stdout.lock();
+                    if let Err(e) = serde_json::to_writer_pretty(&mut out, &payload) {
+                        error!(error = %e, "rules: JSON serialisation failed");
+                        eprintln!("JSON serialisation failed: {e}");
+                        process::exit(2);
+                    }
+                    let _ = writeln!(out);
+                } else {
+                    let mut sorted: Vec<&RuleMeta> = metas.iter().collect();
+                    sorted.sort_by(|a, b| a.name.cmp(&b.name));
+                    for m in sorted {
+                        println!("{engine_label}:{name}  [{cat}]", name = m.name, cat = m.category);
+                    }
                 }
             }
         }

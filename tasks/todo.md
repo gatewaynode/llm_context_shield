@@ -152,30 +152,20 @@ Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) a
 
 ### 11.6b — `lcs rules --all`
 
-- [ ] Add `--all` (`-a`) flag to `Command::Rules` (`src/cli.rs`):
-  - Mutually exclusive with `-e <engine>` (clap `conflicts_with`).
-  - Always emits JSON. Combining with `--categories` / `--threat-classes` / `--fingerprint` is a plan-mode decision — recommended: allow them and emit cross-engine **union** semantics for those views.
-- [ ] Default `--all` JSON shape:
-  ```json
-  {
-    "fingerprint": "<combined-rule-set fingerprint, same value `lcs rules --fingerprint` already returns>",
-    "engines": {
-      "simple": [<RuleMeta+engine>...],
-      "yara":   [<RuleMeta+engine>...],
-      "syara":  [<RuleMeta+engine>...]
-    }
-  }
-  ```
-- [ ] Engine construction in `--all` mode: each of `simple`, `yara`, `syara` is built from the same loaded `Config` (rules dir, custom_rules, disable list). The configured `[scan] engine` is **ignored** in `--all` mode — `--all` is "the full picture" by definition.
-- [ ] Error handling: if an engine fails to build (e.g. malformed YARA rule in the rules dir), report the error inline at top-level under an `"errors": {"<engine>": "<msg>"}` map and continue collecting from the others. Do not fail the whole command unless every engine errors. Decide hard-fail-vs-soft-fail in plan-mode.
-- [ ] Cross-engine fingerprint: confirm the existing `RuleSetFingerprint` already hashes the union (it does — 11.5a sorts by `(engine_name, rule_name)`). `--all`'s `"fingerprint"` is the same value as `lcs rules --fingerprint` provided the configured `Shield` covers the same engine set; document the relationship.
-- [ ] Integration tests:
-  - `lcs rules --all` and `lcs rules -a` produce identical JSON.
-  - Each of the three engine keys is present and contains a non-empty array (assuming bundled rules ship for each).
-  - `lcs rules --all -e simple` exits 2 with a clear "mutually exclusive" message.
-  - `lcs rules --all` JSON parses cleanly and the `fingerprint` key is 64-char lower-hex.
-  - Per-rule fields include `version`, `threat_level`, `threshold` (the 11.6a payload).
-  - For the configured engine, `lcs rules --json` and the matching engine subarray of `lcs rules --all` agree on rule names and metadata content.
+**✅ Complete (uncommitted).** 366/366 tests at 11.6b freeze (was 360; +6 integration). Clippy clean. Plan-mode chose the thin shape — hard-fail per D4, inline engine names per D5, no `BUILTIN_ENGINE_NAMES` const, no `try_build_all_engines` helper, no `errors` map in JSON. Architecturally: walk three names, build via `engines::build`, dispatch on view flags. Cross-engine fingerprint confirmed distinct from per-engine (`2851f3adff02be2a9ae2076b7910cae190a707c9cc70812bfe8ee25fc90321eb` vs default-config simple `4c6cd18a…11469a`).
+
+- [x] Add `--all` (`-a`) flag to `Command::Rules` (`src/cli.rs`): `conflicts_with = "engine"`, **not** in `rules_view` group — combines with `--fingerprint` / `--categories` / `--threat-classes` to switch the cross-engine output shape.
+- [x] Default `--all` JSON shape: `{"fingerprint": "<cross-engine hex>", "engines": {"simple": [...], "syara": [...], "yara": [...]}}`. No `errors` map (hard-fail per D4). Keys alphabetical via `BTreeMap`.
+- [x] Engine construction in `--all` mode: each of `simple`, `syara`, `yara` is built from the same loaded `Config` via `engines::build` directly (bypasses `Shield::builder()` to avoid correlation-rule loading we don't use). The configured `[scan] engine` is ignored.
+- [x] Error handling: hard-fail on any engine build error (D4 chose this over the soft-fail+errors-map proposed in the original spec). Realistic failure modes are config errors that already hard-fail in the per-engine path; mirroring keeps `--all` predictable. If a consumer ever requests partial output, add `--strict`-style flags then.
+- [x] Cross-engine fingerprint: `compute_fingerprint(&[("simple", &m1), ("syara", &m2), ("yara", &m3)])`. Distinct from any per-engine `lcs rules --fingerprint` by design. Documentation in 11.6c.
+- [x] Integration tests (6 new in `tests/integration.rs`):
+  - `rules_all_long_and_short_flags_match` — `--all` and `-a` byte-identical.
+  - `rules_all_default_json_has_fingerprint_and_engines` — JSON shape + per-rule keys (`engine`, `name`, `category`, `version`, `threat_level`, `threshold`); all three engine arrays non-empty under `cli,yara,syara` features.
+  - `rules_all_engines_keys_are_alphabetical` — regression-proofs the `BTreeMap` choice.
+  - `rules_all_with_engine_flag_exits_two` — clap mutual-exclusion error + exit 2.
+  - `rules_all_fingerprint_emits_single_hex_line` — single 64-char lowercase hex line.
+  - `rules_all_categories_emits_cross_engine_union` — superset of `rules --categories -e simple`.
 
 ### 11.6c — Documentation and harness hand-off
 

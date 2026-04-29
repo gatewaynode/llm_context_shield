@@ -90,10 +90,20 @@ pub enum Command {
     /// the one a scan would actually run against. View flags
     /// (`--categories`, `--threat-classes`, `--json`, `--fingerprint`) are
     /// mutually exclusive; default is the human-readable rule list.
+    ///
+    /// `--all` switches to a cross-engine view that builds every built-in
+    /// engine (simple, syara, yara) from the same Config and emits the union.
+    /// Combines with `--fingerprint`, `--categories`, and `--threat-classes`
+    /// to switch the cross-engine output shape.
     Rules {
         /// Engine to inspect: simple, yara, syara
         #[arg(short = 'e', long)]
         engine: Option<String>,
+
+        /// Cross-engine view: list every built-in engine's rules in one JSON document.
+        /// Mutually exclusive with `-e <engine>`.
+        #[arg(short = 'a', long, conflicts_with = "engine")]
+        all: bool,
 
         /// Print the category set the configured shield can emit, one per line
         #[arg(long, group = "rules_view")]
