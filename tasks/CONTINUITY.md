@@ -1,289 +1,83 @@
 # Continuity
 
-Session-state notes. Updated at session end so the next session can pick up without re-reading the full transcript. Replaces the old "Session Handoff" section that lived at the top of `todo.md` before the 2026-04-25 truncation.
+Session-state notes. Rewritten at session end so the next session can pick up without re-reading the full transcript.
 
 ---
 
-## State as of 2026-04-27 (Phase 11.5a–c + 11.6a complete and uncommitted; v0.5.2 installed; 11.6 spec checkmarks refreshed; 11.6b spec landed, not yet planned)
+## State as of 2026-04-28 (Phase 11.5 + 11.6a + 11.6b shipped, committed, pushed; installed binary predates 11.6b)
 
-**Released:** `v0.5.0` (commit `d511008`). Tagged `v0.5.0`, pushed to `origin/main`.
+**Branch:** `main`, working tree **clean**, **up to date with `origin/main`**. The big uncommitted backlog from the prior session (11.5a/b/c + 11.6a + threat_scores fix + 11.6 spec) all landed as four commits on top of `1bb893a`, all pushed:
 
-**Active local install:** `~/.local/bin/lcs` → `~/.local/share/llm_context_shield/lcs-0.5.2`. Rebuilt with `cargo build --release --all-features` (3.56 s warm — most deps cached from the 0.5.1 build) and copied in the 2026-04-26 session. `lcs --version` confirms `0.5.2`. The install carries every uncommitted 11.5a/b/c + 11.6a addition. Binary is 29 MB (`--all-features`); prior `lcs-0.5.1` (29 MB) and `lcs-0.5.0` (25 MB, `cli,yara,syara` only) retained on disk for rollback.
+```
+15cdf54 Simplified the cross engine fingerprinting after discussion.   ← 11.6b
+fd5b1b9 bug: lcs 0.5.2 omits threat_scores from the JSON ... Fixed.    ← threat_scores bug fix
+75e005c Added missing metadata fields to JSON output.                  ← 11.6a
+4bd38ec Restructuring rule handing to be dynamically introspective.    ← 11.5a/b/c bundled
+1bb893a Out of band feature request from first consumer app.           ← (was already committed)
+```
 
-**Working tree:** **Phases 11.5a + 11.5b + 11.5c + 11.6a all fully implemented and uncommitted; Cargo.toml version bumped 0.5.0 → 0.5.2 (uncommitted, two-step: 0.5.1 then 0.5.2); `tasks/todo.md` carries the Phase 11.6 spec PLUS checkmark refresh + status headers + implementation notes for 11.5a/b/c/11.6a (uncommitted).** `cargo test --features cli,yara,syara` → 359/359 passing (291 lib + 62 integration + 4 syara_rules + 2 doctests; was 350 pre-11.6a, +9 new from 11.6a). `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` clean. Manual smokes validated for 11.6a (per-engine `version`/`threat_level`/`threshold` JSON keys; new default fingerprint `4c6cd18a…11469a` was `2d7806f7…1751e5d3` pre-11.6a — intentional). **Still 1 commit ahead of `origin/main` from before** — `1bb893a` ("Out of band feature request from first consumer app") — push pending; the 11.5a/b/c + 11.6a + 0.5.0→0.5.2 bump + 11.6 spec + todo.md checkmark refresh are all on top of it, uncommitted. Diff is large; **commit strategy decision still pending** before starting 11.6b: splitting into per-sub-phase commits (recommended for diff readability) vs bundling.
+**Cargo version:** 0.5.3. **Installed binary:** `~/.local/bin/lcs → ~/.local/share/llm_context_shield/lcs-0.5.3`. **Built before 11.6b**, so the installed binary does **not** carry `--all`. To pick that up: `cargo build --release --all-features && cp target/release/lcs ~/.local/share/llm_context_shield/lcs-0.5.4` (with a 0.5.4 version bump) and repoint the symlink. The user did not explicitly ask for this — flag it next session before doing it.
+
+**Test count:** 366/366 (`291 lib + 69 integration + 4 syara_rules + 2 doctests`). Clippy clean under `--features cli,yara,syara --all-targets -- -D warnings`.
 
 **Phase status:**
-- Phases 1–11 shipped.
-- **Phase 11.5a complete (uncommitted).** TaskList #164–171 all completed.
-- **Phase 11.5b complete (uncommitted).** TaskList #172–177 all completed. `lcs rules` subcommand + `--show-fingerprint` flag + scan-output fingerprint embedding live and passing.
-- **Phase 11.5c complete (uncommitted).** TaskList #178–185 all completed. `Finding.{rule_name, engine}` widened; per-engine stamping live; text output gains conditional `  rule: <name> (engine: <eng>)` line; cross-tool consistency confirmed (`findings[].rule_name` ∈ `lcs rules --json | .rules[].name`).
-- **Phase 11.6 spec landed in `tasks/todo.md`** (between 11.5 and 12; uncommitted). Three sub-phases: 11.6a per-rule scoring metadata (`version`, `threat_level`, `threshold` on `RuleMeta`); 11.6b cross-engine `lcs rules -a/--all` JSON view; 11.6c docs + harness hand-off. todo.md status checkmarks + implementation-note headers refreshed 2026-04-27.
-- **Phase 11.6a complete (uncommitted).** TaskList #186–191 all completed. `RuleMeta` widened with `version: Option<String>`, `threat_level: i32`, `threshold: i32`; per-engine projection (Simple defaults, Yara `ParsedYaraMeta` + `parse_meta` "version" arm + `extract_rule_meta`, Syara `build_rule_metadata` HashMap projections); 9 new tests; fingerprint hex changed by design.
-- **Phase 11.6b — spec landed, NOT YET PLANNED.** Spec at `tasks/todo.md` Phase 11.6b section (post-checkmark refresh; 6 sub-bullets unchecked). Plan file at `~/.claude/plans/humble-dancing-falcon.md` is now stale (still holds 11.6a plan content); will be overwritten when 11.6b planning starts. Architectural decisions still to settle in plan-mode (see "Phase 11.6b prep" below).
-- Phases 11.5d, 11.6c, 12, 13, 14 unchanged.
+- Phases 1–11, 11.5a/b/c, 11.6a, 11.6b — **complete + committed + pushed**.
+- Phase 11.5d, 11.6c — pending (docs + harness hand-off, no code changes).
+- Phases 12, 13, 14 — unchanged, unscheduled.
 
 ---
 
-## Phase 11.5a progress
+## Phase 11.6b summary — `lcs rules --all` cross-engine view (complete, committed)
 
-**Plan file:** `~/.claude/plans/humble-dancing-falcon.md` (approved 2026-04-26).
+**Spec:** `tasks/todo.md` Phase 11.6b (post-checkmark refresh + post-commit). **Commit:** `15cdf54`. **Plan archived:** `~/.claude/plans/humble-dancing-falcon.md` holds the now-shipped thin-shape plan; will be overwritten when 11.6c planning starts.
 
-**Tasks (TaskList) — all completed:**
-- ✅ #164 Step 1 — `RuleMeta` + `Engine::rule_metadata()` trait extension + `Category::ALL`
-- ✅ #165 Step 2 — `Scanner::category()` + 6 overrides + `SimpleEngine::rule_metadata`
-- ✅ #166 Step 5 — `RuleSetFingerprint` module + `sha2 = "=0.10.9"` dependency
-- ✅ #167 Step 6 — `ShieldError::NoRulesLoaded` + tracing warn
-- ✅ #168 Step 7 — Shield fingerprint plumbing + `ScanReport.rule_set_fingerprint` + `with_rule_set_fingerprint`
-- ✅ #169 Step 3 — `YaraEngine::rule_metadata` (cached at construction; shared `parse_meta` helper)
-- ✅ #170 Step 4 — `SyaraEngine` source parser + cached `rule_metadata`
-- ✅ #171 Step 8 — Verification: 335/335 tests pass, clippy clean, fingerprint smoke validated
+**Plan-mode story this session.** First plan was over-architected: `BUILTIN_ENGINE_NAMES` const, `try_build_all_engines` helper, `AllEnginesBuild` struct, soft-fail per engine with `errors` map in JSON, deferred unit test for the soft-fail path. User pushback ("most of this bothers me", "the simpler path is almost always preferred") → second-pass plan stripped all of that. Final shipped shape: 3 files touched, 6 integration tests, 5 simpler decisions (D1 build via `engines::build`, D2 cross-engine union for category/threat-class, D3 cross-engine fingerprint distinct by design, D4 hard-fail on engine error, D5 inline `["simple", "syara", "yara"]` slice).
+
+**Spec correction.** The original 11.6b spec bullet on cross-engine fingerprint claimed `--all`'s fingerprint "is the same value as `lcs rules --fingerprint` provided the configured Shield covers the same engine set." User caught that this is wrong — different engine sets hash to different values, so they must differ by design. Fixed in `tasks/todo.md` Phase 11.6b cross-engine-fingerprint bullet (now reads "distinct by design, both valid audit signals at different scopes"). Documentation in 11.6c.
 
 **Net code touched:**
-- `src/scanner.rs` — `Category` derives `PartialOrd, Ord, Hash`; `Category::ALL` const; `Scanner::category()` trait method (default `None`); `ScanReport.rule_set_fingerprint` field + `with_rule_set_fingerprint` builder.
-- `src/engines/mod.rs` — `RuleMeta` struct; `Engine` trait extension (`rule_metadata`, `categories`, `threat_classes` with default impls); `engines::build` warns on zero loaded rules; `pub mod fingerprint`; re-exports `RuleSetFingerprint`, `compute_fingerprint`.
-- `src/engines/fingerprint.rs` — **new module.** `RuleSetFingerprint` newtype + `compute()` over canonical-JSON sort of `(engine_name, RuleMeta)` tuples → SHA-256 → hex. 7 unit tests.
-- `src/engines/simple.rs` — `SimpleEngine::rule_metadata` walks `scanners::build(&[])` (full registry, severity `None`, threat_class = category string).
-- `src/engines/yara.rs` — split `extract_meta` via shared `parse_meta`/`ParsedYaraMeta`; new `extract_rule_meta` for introspection; `YaraEngine.rule_metadata_cache: Vec<RuleMeta>` populated at construction. 4 new tests.
-- `src/engines/syara.rs` — new `parse_source_meta` parser (line-comment stripping, brace-balanced rule-body walker that skips strings + regex literals, meta-block kv extraction); `build_rule_metadata` validation projection; `SyaraEngine.rule_metadata_cache: Vec<RuleMeta>` populated at construction. 9 new parser tests.
-- `src/scanners/{prompt_injection,instruction_override,jailbreak,delimiter_manipulation,data_exfiltration,hidden_content}.rs` — `category()` override (one line each).
-- `src/shield.rs` — `ShieldError::NoRulesLoaded { engine }` variant; build-time check (factory path only — `custom_engine` path exempt by design); `Shield.rule_set_fingerprint` cached; `Shield::rule_set_fingerprint()` accessor; `Shield::scan` stamps the fingerprint onto every `ScanReport`. 4 new tests.
-- `Cargo.toml` — `sha2 = "=0.10.9"`.
-- `examples/fingerprint_smoke.rs` — **new file.** Cross-engine sensitivity smoke (simple/yara/syara fingerprints all distinct; simple deterministic across rebuilds; ScanReport carries the fingerprint).
+- `src/cli.rs` — `Command::Rules.all: bool` with `conflicts_with = "engine"`. Not in `rules_view` group (combines with `--fingerprint` / `--categories` / `--threat-classes` to switch output shape). Doc-comment updated.
+- `src/main.rs` — `if all { ... } else { /* existing per-engine */ }` in the `Command::Rules` handler. Inline `["simple", "syara", "yara"]`, three engines built via `engines::build`, hard-fail on any build error. Sub-mode dispatch: default JSON via `serde_json::json!` (no DTO), `--fingerprint` single-hex-line, `--categories` cross-engine union in `Category::ALL` order, `--threat-classes` lex-sorted `BTreeSet<String>`. New imports: `BTreeMap`, `BTreeSet`, `Category`.
+- `tests/integration.rs` — 6 new tests after `scan_json_clean_includes_empty_threat_scores`: `rules_all_long_and_short_flags_match`, `rules_all_default_json_has_fingerprint_and_engines`, `rules_all_engines_keys_are_alphabetical`, `rules_all_with_engine_flag_exits_two`, `rules_all_fingerprint_emits_single_hex_line`, `rules_all_categories_emits_cross_engine_union`. New import `BTreeSet` at file top.
 
-**Verification artefacts:**
-- `cargo test --features cli,yara,syara` → 335/335 pass.
-- `cargo clippy --features cli,yara,syara -- -D warnings` → clean.
-- `cargo run --example fingerprint_smoke --features cli,yara,syara` → all assertions hold.
-- `--all-features` test run shows 6 pre-existing failures in `tests/semantic_rules.rs` that require ONNX runtime + MiniLM model files; **unrelated** to 11.5a.
-
-**Behavioural note on `NoRulesLoaded`:** the check uses `rule_names().is_empty() && rule_metadata().is_empty()` — both signals must agree before the hard error fires. This intentionally never trips for SimpleEngine (its `rule_metadata` returns the full registry regardless of `--disable`, since the plan dictates introspection describes the full registry not the per-scan subset). The check fires for YARA/SYARA when both `rule_names` and `rule_metadata` are empty — the realistic "no rules loaded" state.
+**Behavioural notes / fingerprint values (default config):**
+- Per-engine simple fingerprint (`lcs rules --fingerprint`): `4c6cd18ac803ea92cb145a143b6e1629b30ee655e59afa6f60a65f150c11469a` (unchanged from 11.6a).
+- Cross-engine combined (`lcs rules --all --fingerprint`): `2851f3adff02be2a9ae2076b7910cae190a707c9cc70812bfe8ee25fc90321eb`. Distinct from any single-engine value by design.
+- `engines` JSON keys alphabetical via `BTreeMap` (`simple, syara, yara`).
+- `--all --categories` outputs 15 categories in `Category::ALL` declaration order.
 
 ---
 
-## What this session settled (so far)
+## What's queued next
 
-1. **Plan-mode dialogue resolved two architecture questions.**
-   - **Scanner trait surface**: extend `Scanner` with `fn category() -> Option<Category>` (default `None`). Trait-level, single source of truth.
-   - **Zero-rules-loaded handling**: scanner errs out with a clear, descriptive message for any scan or rule-data request (`ShieldError::NoRulesLoaded { engine }`); other code paths emit `tracing::warn!`.
+**Phase 11.6c — docs + harness hand-off (no new code).** Spec at `tasks/todo.md` Phase 11.6c section. Touchpoints:
+- `docs/rule-introspection.md` — needs creating (was seeded in 11.5d, never written). Should cover: `RuleMeta` shape, `lcs rules` CLI surface, fingerprint contract (per-engine vs cross-engine distinction landed in 11.6b), `--all` cross-engine view.
+- `docs/rule-authoring.md` — the `version = "..."` meta convention; `threat_level` / `threshold` introspection.
+- `shield-harness` hand-off note — `--all` for per-run snapshots in `meta.json`.
+- PRD §6.2 — widened `RuleMeta` shape mention.
 
-2. **Architectural clarification (user pushback during Q&A).** Introspection lives in `lcs` as the composer. We do **not** add introspection upstream to `yara-x` or `syara-x`. For YARA we use the public `Rule::metadata()` already exposed; for SYARA we parse the source text ourselves before/after `compile_str` since `CompiledRules.rules` is `pub(crate)`. Same machinery scales to correlation- and session-rule introspection later — `lcs` owns the layer.
+**User flagged for after Phase 11.6 wraps:** a tree-sitter–based tool to try out. (Tool not named yet; user will introduce it when we get there.)
 
-3. **Plan file overwritten** at `~/.claude/plans/humble-dancing-falcon.md` (was the prior PRD/Phase-12 plan). New content covers all 8 implementation steps for 11.5a.
-
----
-
-## Open decisions carried forward
-
-- **BUGS.md #4** — `CrossEngine` symmetric pair fires twice. Recommended fix is **option (a)**: canonicalize the pair lexically. Awaits sign-off before patching.
-- **BUGS.md #6** — `Shield::scan` and `report::output` both filter by `min_severity`; redundant in CLI use. Decide whether output-time re-filter is the contract or vestigial.
-- **`install.sh` is broken.** Looks for `target/release/llm_context_shield` but Cargo.toml renames the binary to `lcs`; hardcodes `--features yara` only.
-- **`~/.cargo/bin/lcs` cargo-install stub** from earlier mistaken install path. Harmless (shadowed by `~/.local/bin/lcs` in PATH). Optional housekeeping.
+**Optional housekeeping (not blocking):**
+- Bump Cargo to 0.5.4 + rebuild + reinstall to capture `--all` in the installed binary. Confirm with user first.
+- BUGS.md #4 (CrossEngine symmetric pair fires twice) and #6 (`Shield::scan` redundant `min_severity` filter) — both still open.
+- `install.sh` is broken (looks for `target/release/llm_context_shield`; hardcodes `--features yara`).
+- `~/.cargo/bin/lcs` cargo-install stub from earlier mistaken install path. Harmless (shadowed in PATH).
 
 ---
 
-## Phase 11.5b summary — `lcs rules` CLI surface (complete, uncommitted)
+## Memory updates this session
 
-**Spec:** `tasks/todo.md:56–77`. **Plan archived:** the 11.5b plan was overwritten in `~/.claude/plans/humble-dancing-falcon.md` by the 11.5c plan; if you need the 11.5b record, this section is the canonical post-mortem.
-
-**Tasks (TaskList) — all completed:**
-- ✅ #172 Step 1 — `Command::Rules` CLI variant + `--show-fingerprint` on `Command::Scan`
-- ✅ #173 Step 2 — fingerprint embedding in scan output (JSON always, text gated)
-- ✅ #174 Step 3 — `Shield::engine() -> &dyn Engine` accessor
-- ✅ #175 Step 4 — `Command::Rules` handler with inline `RuleEntry` DTO
-- ✅ #176 Step 5 — 9 new integration tests (rules + scan-output regressions)
-- ✅ #177 Step 6 — verification (344/344 tests, clippy clean, full smoke battery)
-
-**Net code touched:**
-- `src/cli.rs` — `Command::Rules { engine, categories, threat_classes, json, fingerprint }` with clap `group = "rules_view"` for mutual exclusion. `Command::Scan` gains `show_fingerprint: bool`.
-- `src/shield.rs` — `pub fn engine(&self) -> &dyn Engine` accessor. No other API change.
-- `src/report.rs` — `output()` signature gains `show_fingerprint: bool` (last arg). JSON path always inserts `rule_set_fingerprint`. Text path emits `rule_set_fingerprint: <hex>` to stderr when flag is set.
-- `src/main.rs` — passes `show_fingerprint` through to `output()`. New `Command::Rules` handler (~50 lines) with inline `#[derive(serde::Serialize)] struct RuleEntry<'a> { engine: &'a str, #[serde(flatten)] meta: &'a RuleMeta }`. Resolves engine via `Shield::builder()` (mirrors Scan path so config flow matches per Priori 2). Sorts rules by name before emit. Mutually-exclusive flags branched in priority order: `--fingerprint` → `--categories` → `--threat-classes` → `--json` → default rule list.
-- `tests/integration.rs` — 9 new tests appended after the existing `list_*` block:
-  1. `rules_default_lists_engine_prefixed_rules` — checks `simple:prompt_injection  [prompt_injection]` line
-  2. `rules_categories_emits_simple_set` — substring checks on category lines
-  3. `rules_categories_simple_engine_has_six_lines` — exact line-count assertion
-  4. `rules_json_has_fingerprint_and_rules` — parses JSON, checks shape + 64-hex fingerprint
-  5. `rules_fingerprint_is_single_hex_line` — verifies single-line hex output
-  6. `rules_fingerprint_matches_scan_json_fingerprint` — cross-tool determinism
-  7. `rules_unknown_engine_exits_two` — exit code 2 + "Unknown engine" stderr
-  8. `scan_show_fingerprint_emits_to_stderr` — stderr line `rule_set_fingerprint: <hex>` when `--show-fingerprint`
-  9. `scan_json_unconditionally_includes_fingerprint` — regression: top-level fingerprint key always present
-
-**Verification artefacts:**
-- `cargo test --features cli,yara,syara` → 344/344 pass (279 lib + 59 integration + 4 syara_rules + 2 doctests; was 335).
-- `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` → clean.
-- Manual smokes (all green): `lcs rules`, `lcs rules --categories`, `lcs rules --categories -e yara` (15 categories), `lcs rules --threat-classes -e syara` (4 classes incl. `data_exfiltration`, `obfuscation`, `prompt_hijack`, `social_engineering`), `lcs rules --fingerprint` (deterministic), `lcs rules -e bogus` (exit 2), `lcs rules --json` (correct shape), cross-tool fingerprint match between `rules --fingerprint` and `scan -f json | rule_set_fingerprint`, `lcs scan --show-fingerprint` (stderr line present).
-
-**Behavioural notes:**
-- `lcs rules` does **not** honour `--disable` — by design (introspection always describes the full configured registry). If a "filtered/effective view" is ever wanted it'd be a separate flag.
-- Default rule-list view sorts purely by `name` (today engine label is constant per Shield; sort is a no-op on engine but forward-compatible with multi-engine future).
-- JSON entries flatten `RuleMeta` and prepend `engine`. `severity: null` is correct for SimpleEngine rules (per-pattern severity is scan-time).
-- Text-mode fingerprint goes to stderr (matches `--threat-scores` / `--correlations` placement).
-
----
-
-## Phase 11.5c summary — Per-finding rule provenance (complete, uncommitted)
-
-**Spec:** `tasks/todo.md:79–94`. **Plan archived:** the 11.5c plan was overwritten in `~/.claude/plans/humble-dancing-falcon.md` by the 11.6a plan; this section is the canonical 11.5c post-mortem.
-
-**Tasks (TaskList) — all completed:**
-- ✅ #178 Step 1 — widen `Finding` (`rule_name: String`, `engine: String` fields + `with_rule_name`/`with_engine` builders, `Finding::new` keeps signature, defaults both empty)
-- ✅ #179 Step 2 — `RegexScanner::scan` chains `.with_rule_name(self.name)`; `HiddenContentScanner` stamps `RULE_NAME = "hidden_content"` on 3 sites
-- ✅ #180 Step 3 — `SimpleEngine::run_scored` chains `.with_engine("simple")` in the per-scanner loop
-- ✅ #181 Step 4 — `YaraEngine` populates both fields in two struct literals (`rule_name: ident.to_string(), engine: "yara".to_string()`)
-- ✅ #182 Step 5 — `SyaraEngine` populates both fields in two scan-time struct literals + one test-fixture literal at line 1699 (`rule_name: m.rule_name.clone(), engine: "syara".to_string()`)
-- ✅ #183 Step 6 — `src/report.rs` text-output stderr per-finding block gains `if !f.rule_name.is_empty() { writeln!(err, "  rule: {} (engine: {})", ...) }`
-- ✅ #184 Step 7 — 6 new tests: per-engine provenance (simple/yara/syara), `hidden_content_scanner` stamping check, integration test for `findings[].rule_name` + `engine` in scan JSON, integration test for text-output provenance line, correlation-propagation test using `FixedEngine` confirming `Vec<Finding>` transparency
-- ✅ #185 Step 8 — verification (350/350 tests, clippy clean, full smoke battery green)
-
-**Net code touched:**
-- `src/scanner.rs` — `Finding` widened with `rule_name: String, engine: String`; `with_rule_name`/`with_engine` builders; `RegexScanner::scan` chains `.with_rule_name(self.name)`. Empty-string is the documented "no provenance" sentinel for test fixtures and custom engines.
-- `src/scanners/hidden_content.rs` — `const RULE_NAME: &str = "hidden_content"` at module top; three `Finding::new` calls chain `.with_rule_name(RULE_NAME)`.
-- `src/engines/simple.rs` — `run_scored` stamps `let finding = finding.with_engine("simple")` before `ScoredCandidate` wrap; existing test extended.
-- `src/engines/yara.rs` — both `Finding { ... }` struct literals add `rule_name: ident.to_string(), engine: "yara".to_string()`.
-- `src/engines/syara.rs` — both scan-time struct literals + the test fixture at line 1699 add `rule_name: m.rule_name.clone(), engine: "syara".to_string()`.
-- `src/report.rs` — provenance line emitted in text mode only when `rule_name` non-empty; JSON path automatic via existing `Serialize` derive.
-- `src/shield.rs` — new `correlation_propagates_finding_provenance` test using `FixedEngine` fixture: stamps `rule_name`/`engine` via builders, asserts the values flow through `MatchCorrelation.findings[].{rule_name, engine}`. (Hit one snag: initial test used `disable_correlations()` which suppresses *all* correlations including user rules — fixed by removing the call. The `disable_correlations` semantics are absolute, not "bundled-only"; see the existing `correlation_fires_when_rule_matches` test for the additive-rule path.)
-- `tests/integration.rs` — `scan_json_findings_carry_rule_name_and_engine` (parses JSON, asserts non-empty `rule_name`, `engine == "simple"`, cross-consistency with `lcs rules --json`); `scan_text_emits_provenance_line` (asserts stderr contains `(engine: simple)`).
-
-**Verification artefacts:**
-- `cargo test --features cli,yara,syara` → 350/350 pass (283 lib + 61 integration + 4 syara_rules + 2 doctests; was 344).
-- `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` → clean.
-- Manual smokes (all green): all three engines emit non-empty `rule_name` + correct `engine` field through `lcs scan -f json`. Text mode shows the new `  rule: <name> (engine: <eng>)` indented line. Cross-consistency confirmed: `findings[].rule_name` appears in `lcs rules --json | .rules[].name` for the same engine.
-
-**Behavioural notes:**
-- Empty-string sentinel: built-in engines always populate both fields. Empty strings indicate a manually-constructed `Finding` (test fixture, custom engine that opts out, pre-1.5c artefact). JSON always emits both keys; text mode skips the provenance line entirely when empty.
-- `MatchCorrelation` propagation is automatic — its `Vec<Finding>` carries the widened fields without any correlation-engine code change.
-- The split (scanner stamps `rule_name`; engine stamps `engine`) lets YARA / SYARA short-circuit by populating both inline at the construction point where both are in scope. SimpleEngine cannot — scanners don't know which engine wraps them — so it post-stamps in the merge loop.
-
----
-
-## v0.5.1 install update (2026-04-26 session)
-
-After 11.5c verified green:
-1. Cargo.toml version bumped 0.5.0 → 0.5.1 (uncommitted).
-2. `cargo build --release --all-features` (38 s cold; pulled in ONNX, wasmtime, cranelift, etc.).
-3. `cp target/release/lcs ~/.local/share/llm_context_shield/lcs-0.5.1` and `ln -sfn .../lcs-0.5.1 ~/.local/bin/lcs`.
-4. Smoke confirmed: `lcs --version` → `0.5.1`; `lcs scan -f json` shows the 11.5c `rule_name`/`engine` keys; fingerprint `2d7806f739539dfd740d9ceb53bc60947607957d768f6ab045246d0e1751e5d3` (will change after 11.6a — intentional, see plan).
-5. Prior `lcs-0.5.0` (25 MB, `cli,yara,syara` only) retained on disk for rollback.
-
----
-
-## Phase 11.6a summary — Extended `RuleMeta` with version/threat_level/threshold (complete, uncommitted)
-
-**Spec:** `tasks/todo.md` Phase 11.6a section (post-checkmark refresh). **Plan archived:** `~/.claude/plans/humble-dancing-falcon.md` content is the now-implemented 11.6a plan — stale until overwritten when 11.6b planning starts; this section is the canonical 11.6a post-mortem.
-
-**Tasks (TaskList) — all completed:**
-- ✅ #186 Step 1 — widen `RuleMeta` with `version: Option<String>`, `threat_level: i32`, `threshold: i32`
-- ✅ #187 Step 2 — `SimpleEngine::rule_metadata` hardcodes `(None, 1, 0)` defaults; new `rule_metadata_uses_scoring_defaults` test
-- ✅ #188 Step 3 — `YaraEngine` extended: `ParsedYaraMeta.version: Option<String>`; `parse_meta` "version" arm; `extract_rule_meta` projects all three new fields. Two new tests.
-- ✅ #189 Step 4 — `SyaraEngine.build_rule_metadata` extended: 3 HashMap projections (`version` cloned; `threat_level`/`threshold` `i32::parse`-with-default mirroring scan-time `extract_meta`). Two new tests.
-- ✅ #190 Step 5 — 9 new tests across the codebase (3 fingerprint sensitivity, 2 yara round-trip + defaults, 2 syara round-trip + defaults, 1 simple defaults, 1 integration JSON shape)
-- ✅ #191 Step 6 — verification (359/359 tests, clippy clean, full smoke battery green)
-
-**Net code touched:**
-- `src/engines/mod.rs` — `RuleMeta` widened with three new fields; doc-comment expanded for the new field semantics (Option<String> for version; non-Optional i32 for the scoring fields with documented defaults).
-- `src/engines/simple.rs` — `rule_metadata` literal appends `version: None, threat_level: 1, threshold: 0`; new `rule_metadata_uses_scoring_defaults` unit test.
-- `src/engines/yara.rs` — `ParsedYaraMeta.version: Option<String>` field; `parse_meta` initialises `version: None` and adds the `"version"` match arm; `extract_rule_meta` projects `version`/`threat_level.unwrap_or(1)`/`threshold.unwrap_or(0)` into `RuleMeta`. Two new tests (`extract_rule_meta_captures_version_threat_level_threshold`, `extract_rule_meta_defaults_when_meta_absent`).
-- `src/engines/syara.rs` — `build_rule_metadata` adds three HashMap lookups: `version` cloned, `threat_level`/`threshold` `i32::parse().ok().unwrap_or(default)` (mirrors scan-time `extract_meta` minus the `tracing::warn!` — scan-time path already logs on the same data). Two new tests next to the existing `build_rule_metadata` test block.
-- `src/engines/fingerprint.rs` — test-only `meta(...)` helper extended with the three new field defaults; three new sensitivity tests (`version_change_changes_fingerprint`, `threat_level_change_changes_fingerprint`, `threshold_change_changes_fingerprint`).
-- `tests/integration.rs` — new `rules_json_includes_version_threat_level_threshold` test (parses `lcs rules --json`, asserts every rule has `version` (null|string) + `threat_level`/`threshold` (i64≥0)).
-- `Cargo.toml` — version bump 0.5.1 → 0.5.2 (uncommitted; happened after 11.6a verified green).
-
-**Verification artefacts:**
-- `cargo test --features cli,yara,syara` → 359/359 pass (291 lib + 62 integration + 4 syara_rules + 2 doctests; was 350).
-- `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` → clean.
-- Manual smokes (all green via the installed `lcs 0.5.2`):
-  - Simple: `lcs rules --json` → 6 rules, every entry `{version: null, threat_level: 1, threshold: 0}`.
-  - YARA: `lcs rules --json -e yara` → 34 rules, ALL declare `version` (0 null), threat_level/threshold non-default.
-  - SYARA: `lcs rules --json -e syara` → 44 rules, ALL declare `version` (0 null), threat_level/threshold non-default.
-  - New default fingerprint: `4c6cd18ac803ea92cb145a143b6e1629b30ee655e59afa6f60a65f150c11469a` (was `2d7806f739539dfd740d9ceb53bc60947607957d768f6ab045246d0e1751e5d3` pre-11.6a — intentional widening of the canonical-JSON sort).
-
-**Behavioural notes:**
-- **Bundled rule files NOT modified by 11.6a** (plan-mode discovery dropped that step from the original spec). All 79 bundled rules across 32 files already declared `version`, `threat_level`, AND `threshold` in their `meta:` blocks; existing values (`"1"`, `"2"`) round-trip into `RuleMeta.version` as-is.
-- The fingerprint hex change is the **desired** audit signal. Existing integration tests (`rules_fingerprint_is_single_hex_line`, `rules_fingerprint_matches_scan_json_fingerprint`) check determinism + cross-tool equality, not specific hex values, so they continued to pass without edits.
-- `version: Option<String>` distinguishes "no version declared" (None) from "declared as empty string" (Some("")). SimpleEngine emits None across the board; YARA/SYARA emit Some("1") or Some("2") for every bundled rule today.
-- `threat_level`/`threshold` are non-Optional `i32` so introspection mirrors **scan-time effective semantics** (`ThreatMeta::with_defaults` returns `1`/`0` when meta absent), not declared semantics. Surfacing `Some(1)` vs `None` would force consumers to know "None means 1 anyway" — leaky.
-
----
-
-## v0.5.2 install update (2026-04-26 session)
-
-After 11.6a verified green:
-1. Cargo.toml version bumped 0.5.1 → 0.5.2 (uncommitted).
-2. `cargo build --release --all-features` (3.56 s warm — most deps cached from the 0.5.1 build that pulled in ONNX/wasmtime/cranelift).
-3. `cp target/release/lcs ~/.local/share/llm_context_shield/lcs-0.5.2` and `ln -sfn .../lcs-0.5.2 ~/.local/bin/lcs`.
-4. Smoke confirmed: `lcs --version` → `0.5.2`; `lcs rules --fingerprint` → `4c6cd18a…11469a` (matches dev build); `lcs rules --json -e yara | jq '.rules[0]'` shows `version`/`threat_level`/`threshold`.
-5. Prior `lcs-0.5.1` (29 MB, --all-features) and `lcs-0.5.0` (25 MB, cli/yara/syara only) retained on disk for rollback.
-
----
-
-## Phase 11.6b prep — `lcs rules --all` cross-engine view
-
-**Spec:** `tasks/todo.md` Phase 11.6b section (post-checkmark refresh; 6 sub-bullets unchecked). **No plan written yet** — the 11.6a plan at `~/.claude/plans/humble-dancing-falcon.md` is stale and will be overwritten when 11.6b planning starts. Next session: enter plan-mode, draft 11.6b plan, write to plan file, get approval, then implement.
-
-**What 11.6b ships (high level, from spec):**
-1. New `--all` (`-a`) flag on `Command::Rules`. Mutually exclusive with `-e <engine>` (clap `conflicts_with`). Always emits JSON.
-2. JSON shape: `{"fingerprint": "<hex>", "engines": {"simple": [...], "yara": [...], "syara": [...]}}`. Same fingerprint as `lcs rules --fingerprint` for the same `Config` covering the same engine set.
-3. Engine construction in `--all` mode builds each of `simple`/`yara`/`syara` from the same loaded `Config` (rules dir, custom_rules, disable list); the configured `[scan] engine` is **ignored** by `--all`.
-4. Error handling: per-engine soft-fail under top-level `"errors": {"<engine>": "<msg>"}`; only fail the whole command if every engine errors. (Plan-mode decision: hard-fail-vs-soft-fail policy under `--quiet`.)
-5. Combining `--all` with `--categories` / `--threat-classes` / `--fingerprint`: plan-mode decision — recommend allow + emit cross-engine union semantics for those views.
-6. Six new integration tests (full set in spec).
-
-**Substrate already in place:**
-- **Cross-engine fingerprint:** `RuleSetFingerprint::compute` (`src/engines/fingerprint.rs:50`) already accepts a slice `&[(&str, &[RuleMeta])]` so multi-engine input is the existing API shape, not a refactor — the call is `compute(&[("simple", &m1), ("yara", &m2), ("syara", &m3)])`. The 11.5a integration test `rules_fingerprint_matches_scan_json_fingerprint` already exercises this contract for the single-engine case.
-- **clap mutual-exclusion grouping:** `Command::Rules` already uses `group = "rules_view"` for `--categories | --threat-classes | --json | --fingerprint`. Adding `--all` to that group + a `conflicts_with("engine")` attribute is the surface change.
-- **Serde DTO pattern:** `RuleEntry<'a>` (inline in `src/main.rs::Command::Rules` handler) with `#[serde(flatten)]` already used by `--json`. `--all` extends to a `BTreeMap<&'static str, Vec<RuleEntry>>`-shaped engines map plus an `errors` map.
-- **`Shield::engine()`** accessor (added in 11.5b) is per-Shield. For `--all`, the rules handler can either construct three Shields (one per built-in engine name) under the same loaded `Config`, OR call `engines::build(name, &config)` directly and bypass the Shield wrapper since rule introspection only needs `Engine::rule_metadata`. **Plan-mode decision needed.**
-
-**Architectural decisions to settle in plan-mode (record in the new plan file):**
-1. Engine construction under `--all`: three `Shield::builder()` calls (preserves consistency, pays for correlation-rule loading we won't use), three direct `engines::build(name, &config)` calls (cheaper, needs to confirm we don't lose any side-effect plumbing), or a new `Shield::all_engines()` factory? Affects how `Config` flows + how `[scan] engine` override is "ignored."
-2. `--all --categories` and `--all --threat-classes`: union across engines (recommended) or per-engine map? Affects output shape.
-3. `--all --fingerprint`: emit just the existing combined fingerprint (recommended — same value as `lcs rules --fingerprint`) or a per-engine map of fingerprints? Spec recommends the former.
-4. Soft-fail vs hard-fail when one engine fails to build: per-engine `"errors"` map + 0 exit if any engine succeeded (recommended) or 2 exit on any engine failure?
-5. Test fixture for the malformed-rule error path: synthesize a bad YARA rule via a temp `[rules] dir` config, or feature-gate one of the test rules to emit a parse error?
-6. Where to put the `BUILTIN_ENGINE_NAMES` enumeration (if any): inline in main.rs handler, or as a `pub const` in `src/engines/mod.rs` alongside `Category::ALL`? Forward-compat with future user-defined engine plugin point.
-
-**Concrete entry points (anticipated, plan-mode will confirm):**
-- `src/cli.rs` — extend `Command::Rules` with `all: bool` (clap `--all`/`-a`, `group = "rules_view"`, `conflicts_with("engine")`).
-- `src/main.rs` — `Command::Rules` handler branches on `all` first, then existing flag priority order. New DTO `RulesAllReport` with `fingerprint: String`, `engines: BTreeMap<&'static str, Vec<RuleEntry>>`, `errors: BTreeMap<&'static str, String>` (latter only serialised if non-empty via `skip_serializing_if`).
-- `src/engines/mod.rs` — possibly add `BUILTIN_ENGINE_NAMES: &[&str]` constant.
-- `tests/integration.rs` — append 6 new tests after the existing `rules_*` block (currently ends at `rules_unknown_engine_exits_two`, with 11.6a's `rules_json_includes_version_threat_level_threshold` appended further down at the bottom).
-
-**Verification expectations:**
-- `cargo test --features cli,yara,syara` → 359 + 6 new = ~365 pass.
-- `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` → clean.
-- Manual smokes:
-  ```sh
-  lcs rules --all | jq '.engines | keys'
-  # → ["simple", "syara", "yara"]
-
-  lcs rules --all | jq -r '.fingerprint'
-  # → identical to `lcs rules --fingerprint` for the same config
-
-  lcs rules --all -e simple
-  # → exit 2 with "mutually exclusive" stderr
-  ```
-
-**Other pending (housekeeping; not blocking 11.6b):**
-- **Push `1bb893a`** to origin (still 1 ahead).
-- **Commit decision:** 11.5a + 11.5b + 11.5c + 11.6a + Cargo.toml 0.5.0→0.5.2 + 11.6 spec + todo.md checkmark refresh = **LARGE** uncommitted diff on top of `1bb893a`. Splitting recommended — one commit per sub-phase + a final "0.5.2 release prep" bundle (Cargo.toml + todo.md status refresh) — for diff readability; bundling is faster.
-- **Resolve BUGS.md #4 / #6** when convenient.
-- **Fix `install.sh`** as a small infra task.
+- New feedback memory: `feedback_simpler_path.md` ("The simpler path is almost always preferred"). Captured directly from user's pushback on the over-architected 11.6b plan + their explicit phrase. Linked from `MEMORY.md`.
 
 ---
 
 ## File map (where things live)
 
-- **`tasks/todo.md`** — current phase plan. Phase 11.5 at top; 12, 13, 14 follow. Out-of-band feature requests at the bottom.
-- **`tasks/BUGS.md`** — bug tracker. Resolved entries kept with `RESOLVED` markers + verification refs. Task candidates appended at bottom.
-- **`tasks/BACKLOG.md`** — deferred research / speculative ideas. Not commitments.
-- **`tasks/ARCHITECTURE.md`** — design diagrams and pipeline flow.
-- **`tasks/lessons.md`** — empty stub. Task candidate E proposes either backfilling or removing the workflow's reliance on it.
-- **`tasks/04-25-2026__todo.md`** — archive of the pre-truncation `todo.md` from 2026-04-25. Reference if you need the older Phase 1–11 spec history.
-- **`tasks/MANUAL-HANDOFF-task-8d-encodings.md`** — task-specific handoff for the Phase 8d encoding rules. Historical; preserved.
-- **`tasks/SYARA-X-WISHLIST.md`** — feature requests for the upstream `syara-x` crate. (Note: 11.5a does **not** add to this — introspection lives in `lcs`.)
-- **`PRD.md`** — product requirements document; the "what / why" anchor.
-- **`README.md`** — install + CLI usage. Points at PRD for vision, todo.md for phase plan.
-- **`CLAUDE.md`** — project workflow rules and Claude Code guidance.
-- **`~/.claude/plans/humble-dancing-falcon.md`** — currently holds the **stale 11.6a plan** (6 steps, fully implemented this session). Next session will overwrite with 11.6b plan when planning starts. The `Phase 11.6a summary` section above is the canonical post-mortem for 11.6a; `Phase 11.5c summary` and `Phase 11.5b summary` sections above remain the canonical post-mortems for those phases.
+- `tasks/todo.md` — phase plan. 11.5/11.6a/11.6b checkmarks all green; 11.5d/11.6c checkmarks open.
+- `tasks/BUGS.md` — bug tracker. #4 + #6 still open.
+- `tasks/CONTINUITY.md` — this file.
+- `tasks/BACKLOG.md`, `tasks/ARCHITECTURE.md`, `tasks/lessons.md` — unchanged.
+- `tasks/04-25-2026__todo.md` — pre-truncation archive.
+- `~/.claude/plans/humble-dancing-falcon.md` — currently holds the shipped 11.6b thin-shape plan. Stale until overwritten on 11.6c (or whatever's next) planning.
+- `PRD.md`, `README.md`, `CLAUDE.md` — unchanged.

@@ -100,6 +100,8 @@ lcs scan --disable hidden_content,jailbreak input.txt
 
 ## Scanner Categories
 
+> **Informational.** The table below is the canonical taxonomy. The *actual* category set emitted by your install depends on which engine is active and which custom rules are loaded — query it programmatically with `lcs rules --categories` (current engine) or `lcs rules --all --categories` (every built-in engine). See [`docs/rule-introspection.md`](docs/rule-introspection.md) for the full introspection surface.
+
 | Scanner | What it detects |
 |---------|----------------|
 | `prompt_injection` | "ignore previous instructions", identity reassignment, system prompt extraction |

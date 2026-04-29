@@ -101,14 +101,16 @@ The harness can validate categories against `lcs rules`, but per-finding traceab
 
 ### 11.5d — Documentation, hand-offs, and forward seeding
 
-- [ ] Update README "Scanner Categories" table to mark it as **informational** and point readers at `lcs rules --categories` for the programmatic source of truth scoped to their actual install.
-- [ ] Add `docs/rule-introspection.md` covering: the `RuleMeta` shape; the `lcs rules` CLI surface and flag combinations; the fingerprint contract (what it covers, what it doesn't, when it changes); the per-instance vs per-binary distinction.
-- [ ] Add a section to `docs/rule-authoring.md` explaining how `category`, `severity`, and `threat_class` rule metadata feed into `Engine::rule_metadata()` and through to `lcs rules` — relevant for custom YARA / SYARA rule authors.
-- [ ] Update PRD §6.2 (Library embedding contract): mention `Engine::rule_metadata()`, the fingerprint, and the default-impl-empty contract for source compatibility.
-- [ ] Resolve OOB request — mark "External request from `shield-harness`" below as **Resolved** with a back-reference to Phase 11.5. The harness wires `--check-lcs-categories` to call `lcs rules --categories -e <engine>` and records the per-run fingerprint in `meta.json`.
-- [ ] Phase 14 hand-off: update Phase 14a's evidence-attribution design to consume `Engine::rule_metadata()` for per-rule provenance and use the rule-set fingerprint as part of the calibration audit trail.
-- [ ] **Forward seeding for correlation-rule introspection** (deferred — likely Phase 13.5 or merged into Phase 13/Phase 12 finalisation). Note in `tasks/todo.md` Phase 11d follow-ups (the correlation-rule TOML loader at `src/correlation/loader.rs`) and the Phase 13 scan-group entry: when correlation rules grow a new mutable format (YAML is on the table), they must adopt the same loaded-rule introspection pattern — declarative metadata, fingerprint contribution, exposed through a `lcs correlations` (or `lcs rules --kind=correlation`) surface.
-- [ ] **Forward seeding for session-rule introspection** (Phase 12). Add a checkbox in Phase 12b: any session rule format (YAML, TOML, or in-code declarative) must support introspection from day one — declarative metadata, contribute to the fingerprint when loaded, surface through `lcs rules --kind=session`. No second-pass retrofit; design the contract before shipping.
+**✅ Complete (bundled with 11.6c).** Doc pass merged with 11.6c since both phases targeted the same files (rule-introspection.md was created here, not "updated" by 11.6c — the file didn't exist yet). One coherent doc covers identity (11.5d) + scoring metadata (11.6a) + cross-engine view (11.6b). Phase 12b session-rule introspection seed deferred — the upcoming Phase 12 architecture discussion will produce the actual design, so a pre-emptive checkbox would be wasted ink.
+
+- [x] Update README "Scanner Categories" table to mark it as **informational** and point readers at `lcs rules --categories` for the programmatic source of truth scoped to their actual install.
+- [x] Add `docs/rule-introspection.md` covering: the `RuleMeta` shape; the `lcs rules` CLI surface and flag combinations; the fingerprint contract (what it covers, what it doesn't, when it changes); the per-instance vs per-binary distinction.
+- [x] Add a section to `docs/rule-authoring.md` explaining how `category`, `severity`, and `threat_class` rule metadata feed into `Engine::rule_metadata()` and through to `lcs rules` — relevant for custom YARA / SYARA rule authors.
+- [x] Update PRD §6.2 (Library embedding contract): mention `Engine::rule_metadata()`, the fingerprint, and the default-impl-empty contract for source compatibility.
+- [x] Resolve OOB request — marked "External request from `shield-harness`" below as **Resolved** with a back-reference to Phase 11.5/11.6. The harness wires `--check-lcs-categories` to call `lcs rules --categories -e <engine>` and records the per-run fingerprint in `meta.json`.
+- [x] Phase 14 hand-off: Phase 14a's evidence-attribution design now references `Engine::rule_metadata()` for per-rule provenance and the rule-set fingerprint as part of the calibration audit trail (see hand-off note in 14a).
+- [x] **Forward seeding for correlation-rule introspection** — note added to Phase 13 entry below (when correlation rules grow a mutable format, they must adopt the same introspection pattern declared in 11.5).
+- [~] **Forward seeding for session-rule introspection** — **deferred.** The upcoming Phase 12 architecture discussion will design the introspection contract live rather than carrying a checkbox forward. Reason: Phase 12 was about to be planned in the same session; pre-seeding a design for a phase about to be designed is unnecessary friction.
 
 **Non-goals for Phase 11.5**:
 - No checked-in `schema.json` artifact — `lcs rules --json` is the per-instance source of truth; a static file would lie under Priori 2.
@@ -169,14 +171,16 @@ Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) a
 
 ### 11.6c — Documentation and harness hand-off
 
-- [ ] Update `docs/rule-introspection.md` (created in 11.5d):
-  - Add a per-field section on `version` / `threat_level` / `threshold` (semantics, defaults, fingerprint participation).
-  - Add a "Cross-engine view (`--all`)" section with sample JSON and the configured-engine vs `--all` distinction.
-- [ ] Update `docs/rule-authoring.md`:
-  - Show the `version = "..."` meta convention for YARA and SYARA rules.
-  - Mention `threat_level` and `threshold` are now exposed via introspection (the fields themselves were already part of authoring; this phase reshapes them for read-out).
-- [ ] Update `shield-harness` hand-off note (Phase 11.5d's resolved-OOB section): per-run `meta.json` can now snapshot per-rule `version` + `threshold` alongside the fingerprint. Useful for diagnosing recall regressions caused by metadata edits (e.g. someone bumped a threshold and a sample silently stopped firing — the per-rule snapshot pinpoints the change in seconds).
-- [ ] Update PRD §6.2 (Library embedding contract) to reflect the widened `RuleMeta` shape — additive change, but the embedding contract should mention what's exposed.
+**✅ Complete (bundled with 11.5d as one doc pass).** No code changes. `docs/rule-introspection.md` was created (not updated — 11.5d never shipped it). Per-field section on `version` / `threat_level` / `threshold` lives in the `RuleMeta` shape table; `--all` cross-engine view has its own section with sample JSON and the per-engine vs cross-engine fingerprint distinction. `rule-authoring.md` gained a "How metadata feeds introspection" subsection cross-linking to the new doc. PRD §6.2 paragraph mentions `Engine::rule_metadata()`, the fingerprint, the default-impl-empty contract, and the widened `RuleMeta` shape. README "Scanner Categories" marked informational and points at `lcs rules --categories`. OOB shield-harness request below marked Resolved with `meta.json` per-run snapshot guidance.
+
+- [x] Add `docs/rule-introspection.md` (was: update — file didn't exist yet):
+  - Per-field section on `version` / `threat_level` / `threshold` (semantics, defaults, fingerprint participation).
+  - "Cross-engine view (`--all`)" section with sample JSON and the configured-engine vs `--all` distinction.
+- [x] Update `docs/rule-authoring.md`:
+  - `version = "..."` meta convention noted in the introspection cross-link section.
+  - `threat_level` / `threshold` introspection mention — fingerprint participation called out for authors.
+- [x] Update `shield-harness` hand-off — `--all --json` snapshot for per-run `meta.json` covered in the OOB Resolved section below; `meta.json` can now snapshot per-rule `version` + `threshold` alongside the fingerprint, pinpointing recall regressions caused by metadata edits.
+- [x] Update PRD §6.2 (Library embedding contract) to reflect the widened `RuleMeta` shape and the introspection surface.
 
 **Non-goals for Phase 11.6**:
 - No version-bump enforcement — `version` is opaque metadata; lcs does not warn or refuse when authors leave the field unchanged across edits.
@@ -309,6 +313,8 @@ Add a one-shot, *orderless* multi-input scanning surface. A scan group is a rela
 
 Phase 13 is intentionally smaller than Phase 12 — it reuses the existing single-scan and correlation infrastructure rather than introducing new abstractions. The novel surface is the input-collection type, the group-level report, and the choice to bucket per-input findings into the existing correlation evaluator (which already accepts `&[EngineFindings]`) so cross-input correlation falls out for free.
 
+**Forward seed from Phase 11.5 (rule introspection):** if Phase 13 reshapes the correlation-rule loader (TOML → YAML, hot-reload, etc.), the new format must adopt the introspection pattern from 11.5 from day one — declarative metadata, contribute to a fingerprint when loaded, surface through a CLI view (`lcs correlations` or `lcs rules --kind=correlation`). No second-pass retrofit; design the contract before shipping.
+
 ### 13a — `ScanGroup` and `GroupReport` types
 
 - [ ] Create new module `src/scan_group.rs`:
@@ -365,6 +371,8 @@ Phase 7's `ThreatScoreboard` continues to work as-is for integer-based threshold
 - [ ] Design `EvidenceType` enum: `StringMatch`, `Similarity`, `Classifier`, `LlmVerdict`, `Correlation`, `SessionSignal`
 - [ ] Add `pub mod confidence` to `src/lib.rs`
 - [ ] Unit tests for score construction and display
+
+**Hand-off from Phase 11.5/11.6 (introspection):** the `evidence` audit trail should consume `Engine::rule_metadata()` for per-rule provenance — `(rule_name, engine, version, threat_level, threshold)` per evidence entry, not just `(source, raw_score, calibrated_score)`. The rule-set fingerprint (`Shield::rule_set_fingerprint()`) should be recorded once per `ConfidenceScore` (or once per scan in the `ScanReport`-level wrapper) so a calibration audit trail can attribute each calibrated probability to a specific rule-set state. When calibration parameters drift across deployments, the fingerprint is the join key that ties an evidence entry back to the rule version that produced it.
 
 ### 14b — Calibration functions
 
@@ -443,6 +451,16 @@ Test coverage gaps identified during Phase 7 review (2026-04-12). Not bugs — t
 # Out of Band Feature Requests
 
 ## External request from `shield-harness`: expose the category vocabulary distinct from rule names
+
+**✅ Resolved (2026-04-28, Phase 11.5 + 11.6).** The introspection surface that landed across Phase 11.5a–c (rule identity + fingerprint), 11.6a (extended `RuleMeta`), 11.6b (cross-engine `--all`), and 11.6c (docs) covers and exceeds the original ask:
+
+- **Category vocabulary by engine:** `lcs rules --categories -e <engine>` prints one snake-case category name per line — exactly the typo-catcher shape the harness wanted. `lcs rules --all --categories` prints the cross-engine union for matrix runs.
+- **Per-run snapshot for `meta.json`:** the harness can persist `lcs rules --all --json` (or `--all --fingerprint` for just the scalar) once per run. The fingerprint is sensitive to per-rule `threshold` / `threat_level` / `version` edits, so a recall regression caused by a metadata bump pinpoints in seconds — no need to diff the whole rule set. See [`docs/rule-introspection.md`](../docs/rule-introspection.md) for the full contract.
+- **Threat-class vocabulary:** bonus surface — `lcs rules --threat-classes [-e <engine>]` and `lcs rules --all --threat-classes` enumerate the unbounded threat-class strings. Useful if the harness ever wants to validate against `expected_threat_classes` sidecar fields too.
+
+The harness should switch `--check-lcs-categories` from its non-blocking notice mode to real validation, calling `lcs rules --categories -e <engine>` per engine and `lcs rules --all --categories` for cross-engine sidecar checks. Record `lcs rules --all --fingerprint` in `meta.json` per scan run; pair with `lcs --version` for the full audit pair.
+
+---
 
 **Captured:** 2026-04-25 — surfaced during Phase 2 design of the external benchmarking harness (`../shield-harness`).
 **Filed by:** harness consumer; `shield-harness/tasks/CONTINUITY.md` references this entry.

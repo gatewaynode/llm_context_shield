@@ -160,6 +160,8 @@ Documented in [`README.md`](README.md) "Usage" and "Options" sections.
 
 Stable from v0.4 with the `Shield` builder API at the surface. Engine implementations and the `Engine` trait are stable extension points. `Send + Sync` bounds on `Engine` and (📅 Phase 12) `SessionStore` are required for multi-threaded embeddings.
 
+The `Engine` trait exposes per-rule introspection via `rule_metadata() -> Vec<RuleMeta>` (default impl returns empty for source compatibility — custom engines opt in by overriding). `RuleMeta` carries `name`, `category`, `severity`, `threat_class`, `version`, `threat_level`, and `threshold` — covering both rule identity and the scoring metadata the engine actually uses at scan time. Embedding hosts can call `Shield::rule_set_fingerprint()` to obtain a SHA-256 over the canonical-JSON sort of the loaded rule set, suitable for audit-trail attribution. The fingerprint is sensitive to scoring-metadata changes (bumping any rule's `threshold` shifts the fingerprint), which is the intended audit signal. See [`docs/rule-introspection.md`](docs/rule-introspection.md) for the full contract.
+
 Crate features:
 - `cli` (default) — pulls in `clap`, `tracing-subscriber`, `tracing-appender`.
 - `yara` — YARA-X engine.

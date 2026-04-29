@@ -114,6 +114,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **tilth** Smarter code reading for agents
 
+**sentrux** Run `sentrux scan` + `health` after each sub-phase to catch architectural drift early. Watch movement in the bottleneck dimension (modularity / equality / depth / acyclicity / redundancy) — a sub-phase that cuts the quality signal warrants a re-plan, not a continue.
+
 
 ## Context Management
 

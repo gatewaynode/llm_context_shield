@@ -4,6 +4,27 @@ Open research problems, speculative ideas, and deferred investigations. Not comm
 
 ---
 
+## Sentrux deeper-dive: investigate modularity bottleneck
+
+**Added:** 2026-04-28
+**Context:** First sentrux scan of the repo (94 files / 17,463 LOC / 56 import edges) returned `quality_signal = 6630` with **modularity** as the named bottleneck (`raw 0.117, score 4115`). Reported `cross_module_edges: 24 / total_import_edges: 26` — ~92% of import edges cross folder boundaries. Acyclicity (10000), depth (7273), and redundancy (7276) are clean; equality (5885, raw 0.412) is a secondary wart driven by file-size variance.
+
+**Open questions:**
+- Is the modularity number a real coupling problem, or a small-codebase counting artifact? With only 26 total import edges, every cross-folder import counts heavily — the score may be a labelling problem (folder boundaries don't reflect actual seams) rather than a coupling crisis.
+- Which folders are over-coupled in the DSM? Candidate suspects: `src/scanners/` ↔ `src/scanner.rs` ↔ `src/engines/` triangle; `src/correlation/` ↔ `src/scanner.rs` for category emission.
+- What's driving the equality score? `src/main.rs` (~352 lines after 11.6b) and a few large engine files (`src/engines/yara.rs`, `src/engines/syara.rs`) likely dominate. Should `main.rs` shed the `Command::Rules` handler into `src/cli/rules.rs`?
+- Does modularity improve materially if `src/scanner.rs` (the cross-cutting `Finding` / `Category` / `Severity` types) is split into a `src/types/` directory that's imported once per consumer rather than touched from many locations?
+
+**Tools to use:**
+- `sentrux dsm` — dependency structure matrix; identifies the actual cross-folder offenders.
+- `sentrux git_stats` — change frequency × cross-module edge weight; surfaces churn-coupled hotspots.
+- `sentrux test_gaps` — adjacent signal that may explain why some modules look heavy (untested = not imported by tests).
+- Per-file health (whichever sentrux surface exposes it).
+
+**Next step:** after Phase 11.6c lands, run `dsm` + `git_stats` and produce a 1-paragraph diagnosis. If the bottleneck is real, queue a tightening pass before Phase 12 starts (Phase 12 adds `src/session.rs` — a new module — and the modularity number will only get noisier if we don't understand the existing baseline first). If it's an artifact, document that in this entry and move on.
+
+---
+
 ## Ship bundled rules encrypted/obfuscated to avoid distribution-scanner flagging
 
 **Added:** 2026-04-21

@@ -65,11 +65,20 @@ The engine reads `meta:` fields to classify findings and drive the threat scorin
 | `threshold`    | no       | integer | min class score to activate (default `0`) | Threshold-gated evaluation           |
 | `threat_class` | no       | string  | heuristic branch (default = category)     | Scoring class grouping               |
 | `author`       | no       | string  | free text                                 | Attribution only                     |
-| `version`      | no       | string  | free text                                 | Attribution only                     |
+| `version`      | no       | string  | free text                                 | Surfaced via introspection (see below) |
 
 Unknown `category` values are rejected at compile time. Unknown `severity` values default to `low`.
 
 **Note**: In YARA rules, `threat_level` and `threshold` are unquoted integers (`threat_level = 3`). In SYARA rules, they are quoted strings (`threat_level = "3"`) and parsed at load time.
+
+### How metadata feeds introspection
+
+`category`, `severity`, `threat_class`, `version`, `threat_level`, and `threshold` are all surfaced through `Engine::rule_metadata()` and the `lcs rules` CLI. Two implications for authors:
+
+- **Pick stable values.** `name`, `category`, and `threat_class` show up in `lcs rules --json`, in `--disable` configs, and in correlation rule `category` references. Renaming a rule or shifting its category breaks downstream consumers.
+- **Bumps participate in the rule-set fingerprint.** Changing any of the six fields above (or adding/removing a `version`) shifts the SHA-256 emitted by `lcs rules --fingerprint`. That's the audit signal — operators detect rule-set drift between deployments by diffing the fingerprint. Bump `version` when you make a substantive change so the fingerprint moves with intent rather than as a side effect.
+
+See [`docs/rule-introspection.md`](rule-introspection.md) for the full introspection surface, the fingerprint contract, and the `--all` cross-engine view.
 
 ## Threat scoring metadata
 
