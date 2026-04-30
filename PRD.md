@@ -51,21 +51,20 @@ A user scans many files as a related set — a downloaded corpus, a PR diff with
 - **Status:** 📅 Roadmap — Phase 13 (scan groups)
 - **Key NFR:** Aggregation. Group-level threat scoreboards and cross-input correlation must work without persistence or temporal semantics. A scan group is a one-shot snapshot.
 
-### UC-4 — Prompt-history review
+### UC-4 — Prompt-history review (orderless half)
 
-Replay a captured chat history (system prompt + N user turns + N assistant turns) through the scanner to identify which turn introduced an injection, or to detect crescendo patterns retrospectively.
+Scan a captured chat history (system prompt + N user turns + N assistant turns) as a related set of inputs to identify which turn introduced an injection. *Orderless* replay only — treat the history as a scan group.
 
 - **Primary user:** Security engineer, application developer
-- **Status:** 📅 Roadmap — partially Phase 13 (orderless replay), partially Phase 12 (temporal replay with crescendo detection)
-- **Key NFR:** Both flavours required. Orderless replay (treat the history as a scan group) answers "is anything bad anywhere here?". Temporal replay (treat the history as an ordered session) answers "is this a multi-turn attack pattern?". The same captured history can be run through either pipeline depending on the question.
+- **Status:** 📅 Roadmap — Phase 13 (scan groups). The *temporal* half — replaying the history through a stateful session to detect crescendo / accumulation patterns — was originally Phase 12 in this project; transferred to the [aegis](../../aegis) orchestrator project on 2026-04-30 to keep lcs UNIX-composable as a single-shot scanner.
+- **Key NFR:** Aggregation. Group-level threat scoreboards and cross-input correlation must work without persistence or temporal semantics. A scan group is a one-shot snapshot.
 
-### UC-5 — WAF / API-gateway module
+### UC-5 — WAF / API-gateway module (transferred to aegis)
 
-A long-running service (an inference gateway, a RAG ingest sidecar, a chatbot front end) embeds the library and calls it on every incoming request. State is per-user (or per-API-key, or per-conversation) and must survive across requests, processes, and restarts. Storage backend is operator-chosen along an embedded-to-decoupled scaling axis: in-memory for ephemeral / development; embedded `redb` for single-process durable deployments (no infrastructure required); Redis for multi-host deployments where session state must be shared. The backend switch is a config change, not a code change — all three implement the same `SessionStore` trait.
+This use case (long-running service with per-user / per-API-key / per-conversation state surviving across requests and restarts) was originally Phase 12 in this project. As of 2026-04-30 it lives in the [aegis](../../aegis) orchestrator project. lcs's contract from this side is "single-shot scan with stable JSON output and rule-set fingerprint" — aegis composes lcs into the WAF / gateway shape via library or subprocess wrap.
 
 - **Primary user:** Platform operator
-- **Status:** 📅 Roadmap — Phase 12 (session tracking with out-of-process backend)
-- **Key NFR:** The session-store trait must be designed for out-of-process backends from the first sub-phase, even if only the in-memory implementation ships initially. Trait shape changes after operators are integrating against it are unacceptable.
+- **Status:** Out of scope for lcs; owned by aegis.
 
 ## 4. Functional Requirements
 
@@ -108,7 +107,7 @@ Capabilities that combine signals across rules, engines, scans, or sessions. The
 
 Configuration is opt-in. CLI flags always override config; config always overrides built-in defaults. On first run, `lcs init` (or any `lcs scan` invocation with no config dir present) creates `~/.config/llm_context_shield/config.toml` with all options commented out.
 
-Config sections, all optional: `[scan]`, `[rules]`, `[syara]`, `[scoring]`, `[correlation]`, and (📅 Phase 12) `[session]`, (📅 Phase 13) `[scan_group]`, (📅 Phase 14) `[confidence]`.
+Config sections, all optional: `[scan]`, `[rules]`, `[syara]`, `[scoring]`, `[correlation]`, and (📅 Phase 13) `[scan_group]`, (📅 Phase 14) `[confidence]`. Session-related config (`[session]`) is owned by the aegis orchestrator project, not lcs.
 
 ### 4.6 Custom rules
 
@@ -158,7 +157,7 @@ Documented in [`README.md`](README.md) "Usage" and "Options" sections.
 
 ### 6.2 Library
 
-Stable from v0.4 with the `Shield` builder API at the surface. Engine implementations and the `Engine` trait are stable extension points. `Send + Sync` bounds on `Engine` and (📅 Phase 12) `SessionStore` are required for multi-threaded embeddings.
+Stable from v0.4 with the `Shield` builder API at the surface. Engine implementations and the `Engine` trait are stable extension points. `Send + Sync` bounds on `Engine` are required for multi-threaded embeddings. (Session storage and cross-scan state are owned by the aegis orchestrator project — see §6.4.)
 
 The `Engine` trait exposes per-rule introspection via `rule_metadata() -> Vec<RuleMeta>` (default impl returns empty for source compatibility — custom engines opt in by overriding). `RuleMeta` carries `name`, `category`, `severity`, `threat_class`, `version`, `threat_level`, and `threshold` — covering both rule identity and the scoring metadata the engine actually uses at scan time. Embedding hosts can call `Shield::rule_set_fingerprint()` to obtain a SHA-256 over the canonical-JSON sort of the loaded rule set, suitable for audit-trail attribution. The fingerprint is sensitive to scoring-metadata changes (bumping any rule's `threshold` shifts the fingerprint), which is the intended audit signal. See [`docs/rule-introspection.md`](docs/rule-introspection.md) for the full contract.
 
@@ -184,9 +183,14 @@ Constraints:
 - Filesystem rule discovery requires WASI preview-2 capability grants; bundled rules work without filesystem access.
 - The `simple` and `yara` engines are the recommended starting points for WASM embeddings.
 
-### 6.4 Future MCP / HTTP server
+### 6.4 Orchestrator surface (aegis)
 
-Not roadmapped yet. Captured here so future planners do not re-litigate scope: when the WAF/gateway use case (UC-5) demands a network surface beyond per-process embedding, the natural extension is a thin MCP or HTTP-server front end that wraps `Shield` and exposes `scan` and `scan_with_session` over the wire. The Phase 12 session-store trait shape is designed to anticipate this front end (out-of-process backends from day one). When the work is scheduled, it will become a new phase in [`tasks/todo.md`](tasks/todo.md).
+Long-running services, session-aware scanning, multi-step state, multi-tenancy, and any "MCP / HTTP server in front of the scanner" surface live in the separate [aegis](../../aegis) project. aegis is the orchestrator/wrapper that composes lcs into the gateway / WAF / multi-turn shapes. The transfer happened on 2026-04-30 — keeping lcs UNIX-composable as a single-shot scanner was preferred over bundling the full operator-grade stack into one binary. lcs's contracts that aegis composes against:
+
+- `lcs scan` JSON output (stable from v0.4).
+- `lcs rules --all --json` per-instance rule schema export (Phase 11.6b).
+- `lcs rules --all --fingerprint` cross-engine rule-set fingerprint (Phase 11.6b).
+- Three exit codes (`0` clean, `1` findings, `2` error).
 
 ## 7. Out of Scope / Non-Goals
 
@@ -211,12 +215,13 @@ The active phase plan, sub-phases, checklists, and review notes live in [`tasks/
 | 9 | Threshold-gated behavioural rules | ✅ Shipped |
 | 10 | SYARA-only semantic rules | ✅ Shipped |
 | 11 | Cross-rule correlation | ✅ Shipped |
-| 12 | Session-aware scanning | 📅 Next |
-| 13 | Scan groups | 📅 Roadmap |
-| 14 | Confidence calibration and ensemble scoring | 📅 Roadmap |
+| 12 | Session-aware scanning | ↗️ Transferred to [aegis](../../aegis) (2026-04-30) |
+| 13 | Scan groups | 📅 Roadmap (open: may also move to aegis) |
+| 14 | Confidence calibration and ensemble scoring | 📅 Roadmap (open: cross-scan ensemble portion belongs to aegis) |
 
 The PRD owns *what* and *why*. `tasks/todo.md` owns *how* and *when*. When a roadmap phase ships, this table moves the row from 📅 to ✅; the use-case mapping table in §3 also gets updated.
 
 ## 9. Change log
 
+- **2026-04-30** — Phase 12 (session-aware scanning) transferred to the aegis orchestrator project. lcs scope tightened to single-shot scanning; UC-5 dropped from lcs's use-case set, UC-4 reframed as orderless-only. §6.4 rewritten from "future MCP / HTTP server" speculation to a concrete reference to aegis. Roadmap table updated.
 - **2026-04-25** — Initial PRD created. Retrofitted at v0.4 after Phase 11 shipped. Anchored UC-1 through UC-5; revised Phase 12 scope (session tracking only) and split out Phase 13 (scan groups) based on the use-case framing.

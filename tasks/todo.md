@@ -191,117 +191,15 @@ Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) a
 
 ---
 
-## Phase 12: Session-aware scanning
+## Phase 12: Session-aware scanning — TRANSFERRED TO AEGIS (2026-04-30)
 
-Add optional *temporal* per-session state to detect multi-turn attack patterns — crescendo attacks (taxonomy §8.1), gradual steering (§8.1), and in-session protocol accumulation (§8.3). The session module lives in `llm_context_shield` as the orchestrator, not in the engine libraries, because it requires cross-scan memory that individual engines shouldn't own.
+**Status:** removed from lcs scope. Session-aware scanning was transferred to a separate orchestrator project (`../aegis/`) on 2026-04-30 to keep lcs UNIX-composable as a single-shot scanner. The full Phase 12 spec, the architectural discussion, and the open questions for the new project live at:
 
-The core single-scan architecture remains stateless and fast. Session awareness is strictly opt-in and adds a second analysis pass on top of the existing pipeline.
+- `../aegis/tasks/imports/lcs-phase-12-spec.md` (verbatim copy of the original Phase 12a–d spec)
+- `../aegis/tasks/imports/lcs-phase-12-discussions.md` (verbatim copy of the trait-shape / privacy / introspection discussion)
+- `../aegis/tasks/imports/IMPORT-NOTES.md` (open questions for the next aegis session — library vs subprocess wrap, where Phase 13/14 land, etc.)
 
-**Scope boundary.** Phase 12 covers *temporal* per-session state — ordered scan history with crescendo / frequency / spread / spike detection. *Orderless* multi-input correlation (multi-file batch, prompt-history snapshot review) is **Phase 13: Scan groups** — a sibling feature that shares no implementation with sessions. Use Phase 12 when the inputs come from the same caller-identified session over time (e.g. a chatbot user, a gateway client). Use Phase 13 when the inputs are a one-shot snapshot of related material (e.g. all `.md` files in a PR diff). See [PRD.md](../PRD.md) UC-4 and UC-5 for the use-case framing.
-
-**Backend posture.** The trait shape is designed for out-of-process backends from day one (Redis, SQLite, PostgreSQL) even though Phase 12a only ships `InMemorySessionStore`. Trait shape changes after operators are integrating against it are unacceptable; the time to design for multi-process is now, not after the in-memory implementation has shipped and locked in a `&mut self` API.
-
-### 12a — Session store abstraction
-
-- [ ] Design `SessionStore` trait in `src/session.rs` (new module):
-  - **Trait bounds**: `pub trait SessionStore: Send + Sync` — required for multi-threaded embeddings (a single `Shield` instance scanning concurrent requests in a server) and for the `Shield` to remain `Send + Sync`.
-  - **Method receiver**: all methods take `&self`. Backends with mutable internals (the in-memory `HashMap`, a connection pool) wrap the mutability behind interior-mutability primitives (`Mutex`, `RwLock`) or backend-native pools. This keeps the API ergonomic for shared `Arc<dyn SessionStore>` use across threads.
-  - **`session_id: &str`** — opaque to the trait. The caller defines what a session means (per-user ID, per-API-key, per-conversation UUID, per-tab cookie). Phase 12 makes no normalisation assumptions and stores the raw bytes the caller provides.
-  - Methods:
-    - `record_scan(&self, session_id: &str, summary: ScanSummary) -> Result<(), SessionError>`
-    - `get_history(&self, session_id: &str, window: usize) -> Result<Vec<ScanSummary>, SessionError>`
-    - `clear(&self, session_id: &str) -> Result<(), SessionError>`
-    - `expire(&self, max_age: Duration) -> Result<usize, SessionError>` — returns number of sessions purged
-  - **`SessionError`**: enum with variants for backend-specific errors (`StoreUnavailable`, `EncodingError`, `Other(String)`). Returning `Result` from day one means Redis/network backends don't need an API change later.
-- [ ] Design `ScanSummary` struct — privacy-safe metadata only:
-  - `timestamp: SystemTime` — `SystemTime` not `Instant` so it survives serialisation when backends store on disk or over the wire.
-  - `categories: BTreeSet<Category>` — categories detected in this scan (presence set, no counts).
-  - `threat_classes: BTreeSet<String>` — threat classes detected (presence set).
-  - `cumulative_score: i32` — the `ThreatScoreboard::cumulative_score()` value at end of scan.
-  - `severity_histogram: [u32; 4]` — counts indexed by `Low/Medium/High/Critical`. Fixed-size, copyable, cheap.
-  - **Explicitly NOT stored**: input text, finding descriptions, matched substrings, byte ranges. This is a hard privacy boundary — operators embedding the scanner in a WAF or gateway must be able to enable session tracking without paying a privacy or memory tax for retaining content.
-  - `Serialize` + `Deserialize` derives — required for any backend that persists across processes.
-- [ ] Implement `InMemorySessionStore`:
-  - Internal type: `Mutex<HashMap<String, VecDeque<ScanSummary>>>`.
-  - Constructor: `InMemorySessionStore::with_capacity(max_window: usize, max_sessions: usize)` — bounds both per-session window and total session count to prevent unbounded memory growth.
-  - Eviction: on `record_scan`, if `max_sessions` is exceeded, evict the session with the oldest most-recent activity (LRU-on-write, cheap to implement with the existing `VecDeque` timestamps).
-  - `expire(max_age)` — walks all sessions, drops those whose newest summary is older than `max_age`, returns count.
-- [ ] Add `pub mod session;` to `src/lib.rs`. Re-export `SessionStore`, `ScanSummary`, `SessionError`, `InMemorySessionStore` from the crate root.
-- [ ] Unit tests:
-  - CRUD round-trip on `InMemorySessionStore`.
-  - Window sizing — `get_history(id, 5)` returns at most 5 even when more are stored.
-  - Per-session window bound — recording 100 summaries with `max_window=10` retains only the last 10.
-  - `max_sessions` LRU eviction.
-  - `expire(Duration::from_secs(60))` correctly purges old sessions only.
-  - Concurrency smoke test — spawn N threads each calling `record_scan` on the same store; assert no panics, no data loss within the window bound. Validates `Send + Sync` shape.
-  - Serialisation round-trip on `ScanSummary` — `serde_json` to a string and back, confirm field equality. Validates the future-backend contract.
-- [ ] **Non-goals for 12a**: no async API surface, no Redis/SQLite implementations, no CLI surface, no `Shield::scan_with_session` wiring.
-
-### 12b — Session analysis rules
-
-Rules that operate on session history rather than individual scan content. Severity-filter ordering carries forward from Phase 11 — session rules see the same filtered findings the user sees.
-
-- [ ] Design `SessionRule` struct (declarative shape, no free-form pattern strings):
-  - `name: String` — rule identifier for output.
-  - `pattern: SessionPattern` — what to detect (enum, see below).
-  - `window: usize` — number of prior scans to consider.
-  - `threshold: i32` — minimum session-level score to trigger.
-  - `threat_level: i32`, `threat_class: String` — scoring metadata, mirrors `CorrelationRule`.
-- [ ] Design `SessionPattern` enum:
-  - `Crescendo { min_increases: usize }` — `cumulative_score` is monotonically increasing across at least `min_increases` consecutive summaries (or accelerating; decide in plan-mode).
-  - `FrequencyOfClass { threat_class: String, n: usize, m: usize }` — `threat_class` appears in `n` of the last `m` summaries.
-  - `CategorySpread { min_distinct_categories: usize }` — at least N distinct categories appear across the window (probing-for-weak-spots).
-  - `Spike { multiplier: f32 }` — current scan's `cumulative_score` is ≥ `multiplier` × session average.
-- [ ] Implement `SessionAnalyzer::evaluate(&self, current: &ScanReport, history: &[ScanSummary], rules: &[SessionRule]) -> Vec<SessionFinding>`:
-  - One `SessionFinding` per fired rule (mirrors `MatchCorrelation` shape: rule metadata + which summaries contributed).
-  - Pure function — no I/O, easy to unit-test with synthetic histories.
-- [ ] Add `session_findings: Vec<SessionFinding>` to `ScanReport` (separate field, mirroring how Phase 11 added `correlations`).
-- [ ] Bundled session rules: ship 2-3 default rules covering the most obvious patterns (crescendo on `prompt_hijack`, frequency on `social_engineering`, spike on cumulative). Pattern mirrors Phase 11c's bundled correlation catalog.
-- [ ] Unit tests with synthetic session histories — at minimum one positive + one negative per `SessionPattern` variant.
-
-### 12c — Session API surface
-
-Expose session scanning to both library and CLI consumers.
-
-- [ ] Extend `Shield` builder API:
-  - `.session_store(store: Arc<dyn SessionStore>)` — attach a session store. `Arc` not `Box` so the same store can be shared across multiple `Shield` instances (a real concern for server embeddings; one engine config per route, one session store across all of them).
-  - `.session_rules(rules: Vec<SessionRule>)` — additive over bundled, mirroring Phase 11d's `.correlation_rules` semantics.
-  - `.disable_session_analysis()` — opt-out for callers who only want session *recording* without the analysis pass.
-- [ ] Extend `Shield` scan API:
-  - `Shield::scan_with_session(&self, session_id: &str, input: &str) -> ScanReport` — scan + record summary + run session analysis. `session_id` first to match `record_scan` argument ordering.
-  - Error handling: if no session store is attached, return `ScanReport` with `session_findings = vec![]` and a `tracing::warn!`. (Don't panic — calling `scan_with_session` on a Shield without a store is a misconfiguration, not a programming bug; the existing scan still produces meaningful output.)
-- [ ] Extend CLI:
-  - `--session-id <ID>` flag on `lcs scan` — enables session tracking for this scan. Without `--session-id`, behaviour is identical to today.
-  - `--session-window <N>` — override the per-session window for this scan (default from `[session] default_window`).
-  - **Out of scope for 12c**: `--session-store <path>` — that's 12d (with the SQLite/Redis backends).
-- [ ] JSON output: top-level `"session_findings"` key emitted whenever non-empty, mirroring Phase 11d's `"correlations"` shape.
-- [ ] Text output: `--session` flag (mirroring `--correlations` and `--threat-scores`) gates the per-session-finding detail block on stderr. Summary line always includes count when session findings fired.
-- [ ] Add `[session]` section to `Config` / `DEFAULT_CONFIG`:
-  - `enabled: bool` (default `false` — session tracking is opt-in even when a session_id is provided).
-  - `default_window: usize` (default 10).
-  - `max_sessions: usize` (default 1000 — caps in-memory store; backends may ignore).
-  - `expiry_seconds: u64` (default 3600 — auto-expire idle sessions).
-  - `custom_rules: Option<String>` (path to TOML file with custom `SessionRule` definitions, mirroring `[correlation] custom_rules`).
-- [ ] Integration tests: multi-scan sequences in `tests/integration.rs` that simulate a crescendo attack and a frequency attack, verifying both library and CLI surfaces produce the expected session findings. Use `InMemorySessionStore` directly (no on-disk backend yet).
-- [ ] Documentation: new `docs/session-scanning.md` covering session_id semantics (caller-defined opacity), the four bundled patterns, custom-rule TOML format, store choice guidance (in-memory for single-process, deferred backends for multi-process).
-
-### 12d — Pluggable session backends
-
-Two backends ship in 12d, positioned as a **scaling axis** rather than alternatives. Operators start embedded (single binary, no infrastructure) and switch to decoupled (shared Redis) when load or multi-host deployment demands it. The switch is a config change (`[session] backend = "redb" | "redis"`), not a code change — both backends implement the same `SessionStore` trait.
-
-- [ ] Confirm `SessionStore` trait shape held up under real backend implementation pressure. If not, fix the trait *before* shipping a second backend.
-- [ ] Implement `RedbSessionStore` — embedded persistent session state for single-process deployments. Use `redb` (pure-Rust, MVCC, no FFI, well-maintained). Schema: a single multimap table keyed on `session_id` with `(timestamp, ScanSummary)` entries; `redb`'s ordered iteration serves the time-windowed `get_history` naturally. `expire(max_age)` walks all sessions in a write transaction.
-  - Gate behind feature flag `session-redb`.
-  - Construction: `RedbSessionStore::open(path: impl AsRef<Path>) -> Result<Self, SessionError>`.
-- [ ] Implement `RedisSessionStore` — decoupled persistent session state for multi-host service deployments. Use the `redis` crate (`redis = "0.x"`; confirm version under CLAUDE.md's N-1 dependency rule at plan-mode time). Use a `LIST` per session (`LPUSH` on record, `LRANGE` on history, `EXPIRE` for TTL). Connection management: `r2d2` or `redis::Client::get_connection_with_timeout` pooled behind a `Mutex`/`RwLock` inside the store; the store presents the same `&self` interior-mutability shape as `InMemorySessionStore`.
-  - Gate behind feature flag `session-redis`.
-  - Construction: `RedisSessionStore::connect(url: &str) -> Result<Self, SessionError>`.
-  - Why the `redis` crate over `redis-protocol`: `redis-protocol` is just the RESP codec — using it directly means owning connection management, pooling, retry, and command building. The `redis` crate gives all of that and is well-maintained. `fred` is a future-async option; deferred unless an async wrapper trait lands.
-  - Why not `sled`: similar embedded-KV shape but development is widely treated as paused (long-stalled 1.0 beta), which conflicts with CLAUDE.md's conservative dependency stance. `redb` covers the same use case with active maintenance.
-- [ ] Wire backend selection through `[session]` config: `backend = "memory" | "redb" | "redis"` (default `"memory"`), plus backend-specific fields (`redb_path`, `redis_url`). `Shield::builder().build()` resolves the config to construct the appropriate `Arc<dyn SessionStore>`.
-- [ ] Document both backends in `docs/session-scanning.md` — connection-string format, feature flag, eviction semantics, operational concerns (Redis `MEMORY` / `maxmemory-policy`, redb on-disk file growth + `compact()`).
-- [ ] Migration story: include a short "starting embedded, growing decoupled" section in `docs/session-scanning.md` covering how to drain and migrate sessions from `redb` to Redis without losing in-flight history. (Phase-13-style scope cap: a manual one-shot migration, not a live replication shim.)
-- [ ] Acknowledge in the document that an HTTP / MCP front end (a future, unscheduled phase — see [PRD.md](../PRD.md) §6.4) will use the Redis backend to share session state across processes. This is the load-bearing reason 12a designed the trait for out-of-process backends.
+**Implications for lcs.** lcs's contract is now firmly: read input, emit findings, exit. No session state, no cross-scan memory, no temporal pattern detection. Anything that needed `Shield::scan_with_session` or `SessionStore` is aegis's problem. The introspection surface shipped in Phase 11.5 / 11.6 (`lcs rules --all --json`, `lcs rules --all --fingerprint`) is the contract aegis composes against.
 
 ---
 
@@ -309,9 +207,11 @@ Two backends ship in 12d, positioned as a **scaling axis** rather than alternati
 
 Add a one-shot, *orderless* multi-input scanning surface. A scan group is a related set of inputs (multi-file batch, prompt-history snapshot, ingested document corpus) processed in a single invocation. The group has no temporal semantics — there is no "first" or "last" input, no crescendo, no expiry. The output is per-input results plus group-level aggregations: combined threat scoreboard, cross-input correlations, worst-offender summary.
 
-**Scope boundary.** Phase 13 covers *orderless snapshots*. *Temporal sessions* (per-user state across requests, crescendo detection) are **Phase 12** — a sibling feature with no shared implementation. See [PRD.md](../PRD.md) UC-3 and UC-4 for the use-case framing.
+**Scope boundary.** Phase 13 covers *orderless snapshots*. *Temporal sessions* (per-user state across requests, crescendo detection) were the original Phase 12 — transferred to the aegis orchestrator project on 2026-04-30 (see Phase 12 marker above). See [PRD.md](../PRD.md) UC-3 for the use-case framing.
 
-Phase 13 is intentionally smaller than Phase 12 — it reuses the existing single-scan and correlation infrastructure rather than introducing new abstractions. The novel surface is the input-collection type, the group-level report, and the choice to bucket per-input findings into the existing correlation evaluator (which already accepts `&[EngineFindings]`) so cross-input correlation falls out for free.
+**Open question (2026-04-30).** Phase 13 is also arguably orchestration territory — it introduces a multi-input collection type and group-level aggregation. With Phase 12 now in aegis, there's a real question whether Phase 13 should follow it there. Decision pending; the spec below is preserved as-is until that call is made. If Phase 13 stays in lcs, it must remain a single-process one-shot batch operation with no persistent state (otherwise the UNIX-composability argument that drove the Phase 12 transfer applies here too).
+
+Phase 13 is intentionally smaller than the original Phase 12 — it reuses the existing single-scan and correlation infrastructure rather than introducing new abstractions. The novel surface is the input-collection type, the group-level report, and the choice to bucket per-input findings into the existing correlation evaluator (which already accepts `&[EngineFindings]`) so cross-input correlation falls out for free.
 
 **Forward seed from Phase 11.5 (rule introspection):** if Phase 13 reshapes the correlation-rule loader (TOML → YAML, hot-reload, etc.), the new format must adopt the introspection pattern from 11.5 from day one — declarative metadata, contribute to a fingerprint when loaded, surface through a CLI view (`lcs correlations` or `lcs rules --kind=correlation`). No second-pass retrofit; design the contract before shipping.
 
@@ -368,11 +268,13 @@ Phase 7's `ThreatScoreboard` continues to work as-is for integer-based threshold
   - `probability`: f64 (0.0–1.0) — calibrated probability that the input contains the indicated threat
   - `evidence`: Vec of (source, raw_score, calibrated_score) tuples — audit trail showing how each piece of evidence contributed
   - `threat_class`: String — what class of threat this probability represents
-- [ ] Design `EvidenceType` enum: `StringMatch`, `Similarity`, `Classifier`, `LlmVerdict`, `Correlation`, `SessionSignal`
+- [ ] Design `EvidenceType` enum: `StringMatch`, `Similarity`, `Classifier`, `LlmVerdict`, `Correlation`. (Originally included `SessionSignal`; that evidence source moved to aegis along with Phase 12 on 2026-04-30. If lcs Phase 14 ships as in-crate ensemble scoring, sessions are not an evidence input. If aegis ends up owning ensemble scoring instead, the variant returns there with a different shape.)
 - [ ] Add `pub mod confidence` to `src/lib.rs`
 - [ ] Unit tests for score construction and display
 
 **Hand-off from Phase 11.5/11.6 (introspection):** the `evidence` audit trail should consume `Engine::rule_metadata()` for per-rule provenance — `(rule_name, engine, version, threat_level, threshold)` per evidence entry, not just `(source, raw_score, calibrated_score)`. The rule-set fingerprint (`Shield::rule_set_fingerprint()`) should be recorded once per `ConfidenceScore` (or once per scan in the `ScanReport`-level wrapper) so a calibration audit trail can attribute each calibrated probability to a specific rule-set state. When calibration parameters drift across deployments, the fingerprint is the join key that ties an evidence entry back to the rule version that produced it.
+
+**Open question (2026-04-30, parallel to Phase 13):** with Phase 12 in aegis, does Phase 14 (confidence calibration / ensemble scoring) also belong to aegis? Ensemble combination across single-scan signals (string + similarity + classifier + llm + correlation) is naturally in-lcs because it operates on outputs already produced by lcs's engines. Cross-scan ensemble (adding session signals) is naturally in-aegis. The clean split is: lcs owns single-scan ensemble; aegis composes lcs output with session signal for the multi-scan ensemble. Decision pending until aegis's PRD lands.
 
 ### 14b — Calibration functions
 

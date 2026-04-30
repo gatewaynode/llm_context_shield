@@ -4,80 +4,102 @@ Session-state notes. Rewritten at session end so the next session can pick up wi
 
 ---
 
-## State as of 2026-04-28 (Phase 11.5 + 11.6a + 11.6b shipped, committed, pushed; installed binary predates 11.6b)
+## State as of 2026-04-30 (compact-prep)
 
-**Branch:** `main`, working tree **clean**, **up to date with `origin/main`**. The big uncommitted backlog from the prior session (11.5a/b/c + 11.6a + threat_scores fix + 11.6 spec) all landed as four commits on top of `1bb893a`, all pushed:
+**Branch:** `main`. The user is about to capture this session's work in a commit before compacting. By the time the next session starts, expect the working tree to be **clean** (or close to it), with the new commits visible in `git log`. Two distinct workstreams from this session:
 
-```
-15cdf54 Simplified the cross engine fingerprinting after discussion.   ← 11.6b
-fd5b1b9 bug: lcs 0.5.2 omits threat_scores from the JSON ... Fixed.    ← threat_scores bug fix
-75e005c Added missing metadata fields to JSON output.                  ← 11.6a
-4bd38ec Restructuring rule handing to be dynamically introspective.    ← 11.5a/b/c bundled
-1bb893a Out of band feature request from first consumer app.           ← (was already committed)
-```
+1. **11.5d + 11.6c bundled doc pass** — already committed as `eeacba4 Documentation update before persistence phases.` *before* this session's later work. No action needed.
+2. **Phase 12 → aegis transfer** — uncommitted at the moment this note is being written. About to land in two commits (one per repo, since `lcs` and `aegis` are separate `.git` roots).
 
-**Cargo version:** 0.5.3. **Installed binary:** `~/.local/bin/lcs → ~/.local/share/llm_context_shield/lcs-0.5.3`. **Built before 11.6b**, so the installed binary does **not** carry `--all`. To pick that up: `cargo build --release --all-features && cp target/release/lcs ~/.local/share/llm_context_shield/lcs-0.5.4` (with a 0.5.4 version bump) and repoint the symlink. The user did not explicitly ask for this — flag it next session before doing it.
+**Test count:** 366/366 (last known good — no source code changed this session). Clippy clean.
+**Cargo version:** 0.5.3. Installed binary still predates 11.6b. Optional: bump to 0.5.4 + reinstall when convenient.
 
-**Test count:** 366/366 (`291 lib + 69 integration + 4 syara_rules + 2 doctests`). Clippy clean under `--features cli,yara,syara --all-targets -- -D warnings`.
-
-**Phase status:**
-- Phases 1–11, 11.5a/b/c, 11.6a, 11.6b — **complete + committed + pushed**.
-- Phase 11.5d, 11.6c — pending (docs + harness hand-off, no code changes).
-- Phases 12, 13, 14 — unchanged, unscheduled.
+**Phase status (lcs):**
+- Phases 1–11, 11.5a–d, 11.6a–c — **complete**.
+- Phase 12 (Session-aware scanning) — **TRANSFERRED to aegis** at `../aegis/` on 2026-04-30.
+- Phase 13 (Scan groups), Phase 14 (Confidence ensemble) — spec preserved in lcs, but flagged with open questions about whether they also transfer to aegis. **This is the next conversation.**
 
 ---
 
-## Phase 11.6b summary — `lcs rules --all` cross-engine view (complete, committed)
+## What's queued: three open architectural questions
 
-**Spec:** `tasks/todo.md` Phase 11.6b (post-checkmark refresh + post-commit). **Commit:** `15cdf54`. **Plan archived:** `~/.claude/plans/humble-dancing-falcon.md` holds the now-shipped thin-shape plan; will be overwritten when 11.6c planning starts.
+The user signalled the next session should pick up here. These are the questions in priority order:
 
-**Plan-mode story this session.** First plan was over-architected: `BUILTIN_ENGINE_NAMES` const, `try_build_all_engines` helper, `AllEnginesBuild` struct, soft-fail per engine with `errors` map in JSON, deferred unit test for the soft-fail path. User pushback ("most of this bothers me", "the simpler path is almost always preferred") → second-pass plan stripped all of that. Final shipped shape: 3 files touched, 6 integration tests, 5 simpler decisions (D1 build via `engines::build`, D2 cross-engine union for category/threat-class, D3 cross-engine fingerprint distinct by design, D4 hard-fail on engine error, D5 inline `["simple", "syara", "yara"]` slice).
+### Q1. Library or subprocess wrap for aegis-over-lcs?
 
-**Spec correction.** The original 11.6b spec bullet on cross-engine fingerprint claimed `--all`'s fingerprint "is the same value as `lcs rules --fingerprint` provided the configured Shield covers the same engine set." User caught that this is wrong — different engine sets hash to different values, so they must differ by design. Fixed in `tasks/todo.md` Phase 11.6b cross-engine-fingerprint bullet (now reads "distinct by design, both valid audit signals at different scopes"). Documentation in 11.6c.
+aegis can either depend on `llm_context_shield` as a Cargo crate (calling `Shield` directly) or shell out to `lcs scan --json` per call. Tradeoff:
 
-**Net code touched:**
-- `src/cli.rs` — `Command::Rules.all: bool` with `conflicts_with = "engine"`. Not in `rules_view` group (combines with `--fingerprint` / `--categories` / `--threat-classes` to switch output shape). Doc-comment updated.
-- `src/main.rs` — `if all { ... } else { /* existing per-engine */ }` in the `Command::Rules` handler. Inline `["simple", "syara", "yara"]`, three engines built via `engines::build`, hard-fail on any build error. Sub-mode dispatch: default JSON via `serde_json::json!` (no DTO), `--fingerprint` single-hex-line, `--categories` cross-engine union in `Category::ALL` order, `--threat-classes` lex-sorted `BTreeSet<String>`. New imports: `BTreeMap`, `BTreeSet`, `Category`.
-- `tests/integration.rs` — 6 new tests after `scan_json_clean_includes_empty_threat_scores`: `rules_all_long_and_short_flags_match`, `rules_all_default_json_has_fingerprint_and_engines`, `rules_all_engines_keys_are_alphabetical`, `rules_all_with_engine_flag_exits_two`, `rules_all_fingerprint_emits_single_hex_line`, `rules_all_categories_emits_cross_engine_union`. New import `BTreeSet` at file top.
+- **Library**: fast, type-safe, no process spawn cost. Couples aegis releases to lcs releases. Forces aegis to handle lcs's optional-feature combinatorics (`yara`, `syara`, `syara-llm`, etc.).
+- **Subprocess**: true UNIX composition. aegis drives whatever `lcs` is on `$PATH`. Lets aegis evolve independently. Loses type safety at boundary; pays JSON parse cost + CLI startup overhead per call (~ms-scale).
 
-**Behavioural notes / fingerprint values (default config):**
-- Per-engine simple fingerprint (`lcs rules --fingerprint`): `4c6cd18ac803ea92cb145a143b6e1629b30ee655e59afa6f60a65f150c11469a` (unchanged from 11.6a).
-- Cross-engine combined (`lcs rules --all --fingerprint`): `2851f3adff02be2a9ae2076b7910cae190a707c9cc70812bfe8ee25fc90321eb`. Distinct from any single-engine value by design.
-- `engines` JSON keys alphabetical via `BTreeMap` (`simple, syara, yara`).
-- `--all --categories` outputs 15 categories in `Category::ALL` declaration order.
+The user's "UNIX pattern of small composable apps" framing during the Phase 12 transfer decision suggests bias toward **subprocess**. But that's not a foregone conclusion — library wrap can still respect UNIX composability if aegis exposes its own clean CLI.
+
+This question shapes everything downstream (Q2 and Q3 partly hinge on it).
+
+### Q2. Does Phase 13 (scan groups) also transfer to aegis?
+
+The same argument that drove Phase 12 to aegis applies here: scan groups introduce multi-input collection types and group-level aggregation that are orchestration concerns. Counter-argument: the current Phase 13 spec is intentionally *single-process, one-shot, no persistent state* — that's still UNIX-composable.
+
+If 13 stays in lcs, lcs's contract widens to `lcs scan-group <files...>` or similar. If 13 moves, aegis composes lcs scans into a group locally.
+
+### Q3. Does Phase 14's cross-scan ensemble portion transfer?
+
+Phase 14 is confidence calibration / ensemble scoring across evidence types. The clean split:
+
+- **Single-scan ensemble** (string + similarity + classifier + llm + correlation evidence on one input) — naturally in lcs because it operates on outputs already produced by lcs's engines in one pass.
+- **Cross-scan ensemble** (adding session signals from aegis) — naturally in aegis because session signals only exist there.
+
+This split is referenced in lcs's todo.md and PRD already. Decision pending.
 
 ---
 
-## What's queued next
+## Reference material for the discussion
 
-**Phase 11.6c — docs + harness hand-off (no new code).** Spec at `tasks/todo.md` Phase 11.6c section. Touchpoints:
-- `docs/rule-introspection.md` — needs creating (was seeded in 11.5d, never written). Should cover: `RuleMeta` shape, `lcs rules` CLI surface, fingerprint contract (per-engine vs cross-engine distinction landed in 11.6b), `--all` cross-engine view.
-- `docs/rule-authoring.md` — the `version = "..."` meta convention; `threat_level` / `threshold` introspection.
-- `shield-harness` hand-off note — `--all` for per-run snapshots in `meta.json`.
-- PRD §6.2 — widened `RuleMeta` shape mention.
+If the user wants to revisit any of the lcs Phase 12 thinking during the q1–q3 conversation, the canonical artifacts are now in aegis:
 
-**User flagged for after Phase 11.6 wraps:** a tree-sitter–based tool to try out. (Tool not named yet; user will introduce it when we get there.)
+- `../aegis/tasks/imports/lcs-phase-12-spec.md` — full Phase 12a–d spec.
+- `../aegis/tasks/imports/lcs-phase-12-discussions.md` — three-thread architectural discussion (trait shape, privacy, introspection).
+- `../aegis/tasks/imports/IMPORT-NOTES.md` — Q1 and Q2 are already enumerated there as "open questions" with deeper notes than this CONTINUITY.
 
-**Optional housekeeping (not blocking):**
-- Bump Cargo to 0.5.4 + rebuild + reinstall to capture `--all` in the installed binary. Confirm with user first.
-- BUGS.md #4 (CrossEngine symmetric pair fires twice) and #6 (`Shield::scan` redundant `min_severity` filter) — both still open.
-- `install.sh` is broken (looks for `target/release/llm_context_shield`; hardcodes `--features yara`).
-- `~/.cargo/bin/lcs` cargo-install stub from earlier mistaken install path. Harmless (shadowed in PATH).
+aegis's project skeleton:
+- `aegis/CLAUDE.md` — preamble dated and project overview added 2026-04-30.
+- `aegis/tasks/TODO.md` — seeded with Phase 0 vision-derivation steps.
+- `aegis/PRD.md`, `aegis/ARCHITECTURE.md` — still 1-line stubs, deliberately so (CLAUDE.md says derive interactively).
+- `aegis/src/main.rs` — bare 45-byte stub. Untouched.
 
 ---
 
 ## Memory updates this session
 
-- New feedback memory: `feedback_simpler_path.md` ("The simpler path is almost always preferred"). Captured directly from user's pushback on the over-architected 11.6b plan + their explicit phrase. Linked from `MEMORY.md`.
+- No new memories. The 2026-04-28 `feedback_simpler_path.md` continued to apply (e.g., bundling 11.5d+11.6c instead of two separate doc passes; tier 1/2/3 scope discipline in the Phase 12 architectural reply).
 
 ---
 
-## File map (where things live)
+## File map
 
-- `tasks/todo.md` — phase plan. 11.5/11.6a/11.6b checkmarks all green; 11.5d/11.6c checkmarks open.
-- `tasks/BUGS.md` — bug tracker. #4 + #6 still open.
+- `tasks/todo.md` — phase plan. 11.5/11.6 all green; Phase 12 marked transferred to aegis; Phase 13 + 14 carry open questions.
+- `tasks/BACKLOG.md` — sentrux deeper-dive entry added this session.
+- `tasks/BUGS.md` — #4, #6 still open.
 - `tasks/CONTINUITY.md` — this file.
-- `tasks/BACKLOG.md`, `tasks/ARCHITECTURE.md`, `tasks/lessons.md` — unchanged.
 - `tasks/04-25-2026__todo.md` — pre-truncation archive.
-- `~/.claude/plans/humble-dancing-falcon.md` — currently holds the shipped 11.6b thin-shape plan. Stale until overwritten on 11.6c (or whatever's next) planning.
-- `PRD.md`, `README.md`, `CLAUDE.md` — unchanged.
+- `tasks/SYARA-X-WISHLIST.md` — pre-existing, untouched this session.
+- `tasks/ARCHITECTURE.md`, `tasks/lessons.md` — unchanged.
+- `~/.claude/plans/humble-dancing-falcon.md` — stale (still holds shipped 11.6b plan). Overwrite next time we plan.
+- `PRD.md`, `README.md`, `CLAUDE.md`, `docs/rule-introspection.md`, `docs/rule-authoring.md` — modified (in `eeacba4` for the doc-pass changes; PRD.md has further uncommitted changes from the Phase 12 transfer).
+- `../aegis/` — sister project root. PRD/ARCHITECTURE still stubs; `tasks/TODO.md` seeded; `tasks/imports/` holds the three Phase 12 transfer artifacts.
+
+---
+
+## Sentrux baseline
+
+Last scan (2026-04-28, end of doc pass): `quality_signal = 6630`. Bottleneck: **modularity (4115)**, raw 0.117, with 24/26 cross-module edges. Secondary: equality (5885, raw 0.412) — file-size variance, likely driven by `src/main.rs` and large engine files.
+
+Phase 12 transfer doesn't move sentrux on lcs (no code was ever written for it). The BACKLOG entry on the modularity bottleneck stands; revisit with `dsm` + `git_stats` after the q1–q3 discussion settles into a code direction. Run sentrux on aegis as new modules land there.
+
+---
+
+## Sticky reminders for the next session
+
+- **Per CLAUDE.md (aegis-side)**: "Run sentrux scan + health after each sub-phase to catch architectural drift early." This applies to aegis from day one.
+- **Per CLAUDE.md (aegis-side)**: PRD/ARCHITECTURE are derived interactively. Don't pre-shape them; let the user steer during the q1–q3 discussion.
+- **Per `feedback_simpler_path.md`**: bias toward thin shapes. The library-vs-subprocess decision (Q1) is the perfect place to apply this — both options are valid; pick the thinner one for the first ship.
