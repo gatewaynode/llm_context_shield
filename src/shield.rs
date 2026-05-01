@@ -125,7 +125,7 @@ pub struct ShieldBuilder {
 }
 
 impl ShieldBuilder {
-    /// Set the scan engine by name (`"simple"`, `"yara"`).
+    /// Set the scan engine by name (`"simple"`, `"yara"`, `"syara"`).
     pub fn engine(mut self, name: &str) -> Self {
         self.engine_name = name.into();
         self

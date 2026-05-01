@@ -33,15 +33,12 @@ SYARA rules store `threat_level` and `threshold` as quoted strings (e.g., `threa
 
 ---
 
-## 3. `ShieldBuilder::engine()` doc string omits `syara`
+## 3. `ShieldBuilder::engine()` doc string omits `syara` — RESOLVED
 
 **Priority**: Low
-**File**: `src/shield.rs:102`
+**File**: `src/shield.rs:128`
 **Found**: 2026-04-25 codebase review
-
-The library docstring reads `/// Set the scan engine by name (`"simple"`, `"yara"`).` but the factory at `src/engines/mod.rs:54-75` accepts `"simple"`, `"yara"`, and `"syara"`. CLI `--engine` help (`src/cli.rs:39`) and the `unknown engine` error message (`src/engines/mod.rs:74`) both list all three correctly — only the public Rust doc has drifted.
-
-**Fix**: Update the docstring to `("simple", "yara", "syara")`. One-line change.
+**Resolved**: 2026-05-01 — docstring updated to `("simple", "yara", "syara")` in `src/shield.rs:128`. One-line fix.
 
 ---
 
