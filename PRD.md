@@ -61,7 +61,7 @@ Scan a captured chat history (system prompt + N user turns + N assistant turns) 
 
 ### UC-5 — WAF / API-gateway module (transferred to aegis)
 
-This use case (long-running service with per-user / per-API-key / per-conversation state surviving across requests and restarts) was originally Phase 12 in this project. As of 2026-04-30 it lives in the [aegis](../../aegis) orchestrator project. lcs's contract from this side is "single-shot scan with stable JSON output and rule-set fingerprint" — aegis composes lcs into the WAF / gateway shape via library or subprocess wrap.
+This use case (long-running service with per-user / per-API-key / per-conversation state surviving across requests and restarts) was originally Phase 12 in this project. As of 2026-04-30 it lives in the [aegis](../../aegis) orchestrator project. lcs's contract from this side is "single-shot scan with stable JSON output and rule-set fingerprint" — aegis composes lcs into the WAF / gateway shape via subprocess (decided 2026-05-01; the library wrap option is deferred to a future productized aegis where in-process latency matters).
 
 - **Primary user:** Platform operator
 - **Status:** Out of scope for lcs; owned by aegis.
@@ -92,9 +92,9 @@ Capabilities that combine signals across rules, engines, scans, or sessions. The
 |---|---|---|---|
 | Heuristic threat scoring | 7 | ✅ Shipped | Per-class and cumulative threat accumulators. Threshold-gated rules can stay silent until cheaper rules raise suspicion. |
 | Cross-rule correlation | 11 | ✅ Shipped | Rules that fire only when two findings co-occur (proximate, ordered, combined, or cross-engine). Composite scores feed back into the scoreboard. |
-| Session tracking | 12 | 📅 Roadmap | Per-session history of scan summaries; rules that fire on multi-turn patterns (crescendo, frequency, spread, spike). |
-| Scan groups | 13 | 📅 Roadmap | Orderless multi-input correlation. Per-input results plus group-level aggregations. |
-| Confidence calibration | 14 | 📅 Roadmap | Calibrated probability estimates that combine evidence from string matches, semantic similarity, LLM verdicts, correlation, and session signals into a unified confidence score. |
+| Session tracking | 12 | ↗️ aegis | Transferred to [aegis](../../aegis) on 2026-04-30. Per-session history, multi-turn patterns (crescendo, frequency, spread, spike), and any signals that require state across scans live there, not in lcs. |
+| Scan groups | 13 | 📅 Roadmap | Orderless multi-input correlation. Per-input results plus group-level aggregations. Confirmed in lcs (2026-05-01); cross-input correlation reuses the existing `CorrelationEngine`. |
+| Confidence calibration | 14 | 📅 Roadmap | Calibrated probability estimates combining evidence from string matches, semantic similarity, LLM verdicts, and correlation into a unified per-scan confidence score. *Single-scan* ensemble only (decided 2026-05-01); the *multi-scan* ensemble that adds session-signal evidence is a separate layer in aegis. |
 
 ### 4.4 Reporting
 
@@ -127,7 +127,7 @@ Rule authoring is documented in [`docs/rule-authoring.md`](docs/rule-authoring.m
 
 No scan content leaves the process unless the operator has explicitly opted in to LLM-backed semantic rules (`syara-llm`). Even then, the configured endpoint is operator-chosen — it can be a fully local server (LMStudio, Ollama, vLLM) or a remote API. The default-build CLI (no LLM features) makes no network calls.
 
-`ScanSummary` (Phase 12) and `GroupReport` (Phase 13) carry only metadata — categories, threat classes, severity histograms, scores. They do not store input text or finding details.
+`GroupReport` (Phase 13) carries only metadata — categories, threat classes, severity histograms, scores. It does not store input text or finding details. (Phase 12's `ScanSummary` is owned by aegis as of 2026-04-30; the same minimisation posture applies there but is enforced in that project.)
 
 ### 5.3 Determinism
 
@@ -185,7 +185,11 @@ Constraints:
 
 ### 6.4 Orchestrator surface (aegis)
 
-Long-running services, session-aware scanning, multi-step state, multi-tenancy, and any "MCP / HTTP server in front of the scanner" surface live in the separate [aegis](../../aegis) project. aegis is the orchestrator/wrapper that composes lcs into the gateway / WAF / multi-turn shapes. The transfer happened on 2026-04-30 — keeping lcs UNIX-composable as a single-shot scanner was preferred over bundling the full operator-grade stack into one binary. lcs's contracts that aegis composes against:
+Long-running services, session-aware scanning, multi-step state, multi-tenancy, and any "MCP / HTTP server in front of the scanner" surface live in the separate [aegis](../../aegis) project. aegis is the orchestrator/wrapper that composes lcs into the gateway / WAF / multi-turn shapes. The transfer happened on 2026-04-30 — keeping lcs UNIX-composable as a single-shot scanner was preferred over bundling the full operator-grade stack into one binary.
+
+**Integration mode (decided 2026-05-01):** aegis composes lcs as a **subprocess**, not a library dependency. aegis spawns `lcs`, pipes input on stdin, parses JSON from stdout. This decouples release cadences, sidesteps lcs's optional-feature combinatorics (`yara`, `syara`, `syara-llm`), and matches the contract surface listed below — which was deliberately built for subprocess composability. The library wrap (linking `llm_context_shield` as a Cargo dep) is deferred to a future productized aegis where ~ms-scale CLI startup + JSON parse cost would matter; for session-aware orchestration where one scan = one user turn, that cost is noise.
+
+lcs's contracts that aegis composes against:
 
 - `lcs scan` JSON output (stable from v0.4).
 - `lcs rules --all --json` per-instance rule schema export (Phase 11.6b).
@@ -216,12 +220,13 @@ The active phase plan, sub-phases, checklists, and review notes live in [`tasks/
 | 10 | SYARA-only semantic rules | ✅ Shipped |
 | 11 | Cross-rule correlation | ✅ Shipped |
 | 12 | Session-aware scanning | ↗️ Transferred to [aegis](../../aegis) (2026-04-30) |
-| 13 | Scan groups | 📅 Roadmap (open: may also move to aegis) |
-| 14 | Confidence calibration and ensemble scoring | 📅 Roadmap (open: cross-scan ensemble portion belongs to aegis) |
+| 13 | Scan groups | 📅 Roadmap — confirmed in lcs (2026-05-01); cross-input correlation reuse keeps it here. Boundary: lcs takes paths/strings, no input-collection plumbing |
+| 14 | Confidence calibration and ensemble scoring | 📅 Roadmap — single-scan ensemble in lcs (2026-05-01); aegis owns a separate multi-scan ensemble layer over lcs's per-scan output + session signals |
 
 The PRD owns *what* and *why*. `tasks/todo.md` owns *how* and *when*. When a roadmap phase ships, this table moves the row from 📅 to ✅; the use-case mapping table in §3 also gets updated.
 
 ## 9. Change log
 
+- **2026-05-01** — Three open architectural questions from the 2026-04-30 transfer resolved. Q1: aegis composes lcs via subprocess (library option deferred to a future productized aegis). Q2: Phase 13 stays in lcs (cross-input correlation reuse argues against transfer; boundary held at "lcs takes paths/strings, no input-collection plumbing"). Q3: Phase 14 single-scan ensemble stays in lcs; aegis owns a separate multi-scan ensemble layer that wraps lcs's per-scan `ConfidenceScore` with session-signal evidence. Follow-on PRD fixes: §3 UC-5 pinned subprocess; §4.3 capabilities table updated (Session tracking marked transferred; Phase 14 description scoped to single-scan, multi-scan layer noted as aegis-owned); §5.2 dropped stale `ScanSummary` reference; §6.4 added "Integration mode" paragraph stating subprocess composition with rationale.
 - **2026-04-30** — Phase 12 (session-aware scanning) transferred to the aegis orchestrator project. lcs scope tightened to single-shot scanning; UC-5 dropped from lcs's use-case set, UC-4 reframed as orderless-only. §6.4 rewritten from "future MCP / HTTP server" speculation to a concrete reference to aegis. Roadmap table updated.
 - **2026-04-25** — Initial PRD created. Retrofitted at v0.4 after Phase 11 shipped. Anchored UC-1 through UC-5; revised Phase 12 scope (session tracking only) and split out Phase 13 (scan groups) based on the use-case framing.

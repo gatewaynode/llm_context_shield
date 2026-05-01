@@ -197,7 +197,7 @@ Phase 11.5 surfaced rule **identity** (name, category, severity, threat_class) a
 
 - `../aegis/tasks/imports/lcs-phase-12-spec.md` (verbatim copy of the original Phase 12a–d spec)
 - `../aegis/tasks/imports/lcs-phase-12-discussions.md` (verbatim copy of the trait-shape / privacy / introspection discussion)
-- `../aegis/tasks/imports/IMPORT-NOTES.md` (open questions for the next aegis session — library vs subprocess wrap, where Phase 13/14 land, etc.)
+- `../aegis/tasks/imports/IMPORT-NOTES.md` (open questions for the next aegis session — Q1 library-vs-subprocess and Q2 Phase 13/14 placement resolved 2026-05-01; Q3–Q6 still open)
 
 **Implications for lcs.** lcs's contract is now firmly: read input, emit findings, exit. No session state, no cross-scan memory, no temporal pattern detection. Anything that needed `Shield::scan_with_session` or `SessionStore` is aegis's problem. The introspection surface shipped in Phase 11.5 / 11.6 (`lcs rules --all --json`, `lcs rules --all --fingerprint`) is the contract aegis composes against.
 
@@ -209,7 +209,7 @@ Add a one-shot, *orderless* multi-input scanning surface. A scan group is a rela
 
 **Scope boundary.** Phase 13 covers *orderless snapshots*. *Temporal sessions* (per-user state across requests, crescendo detection) were the original Phase 12 — transferred to the aegis orchestrator project on 2026-04-30 (see Phase 12 marker above). See [PRD.md](../PRD.md) UC-3 for the use-case framing.
 
-**Open question (2026-04-30).** Phase 13 is also arguably orchestration territory — it introduces a multi-input collection type and group-level aggregation. With Phase 12 now in aegis, there's a real question whether Phase 13 should follow it there. Decision pending; the spec below is preserved as-is until that call is made. If Phase 13 stays in lcs, it must remain a single-process one-shot batch operation with no persistent state (otherwise the UNIX-composability argument that drove the Phase 12 transfer applies here too).
+**Decision (2026-05-01).** Phase 13 stays in lcs. With aegis composing lcs via subprocess (Q1 decided 2026-05-01), the load-bearing feature of Phase 13 — cross-input correlation reuse via the existing `CorrelationEngine::evaluate` — is best served by a single `lcs scan-group --json` subprocess call returning per-input + aggregate. Moving 13 to aegis would force either N spawns + a new `lcs correlate-only` CLI surface, or duplicating correlation logic across two repos. **Boundary:** lcs takes a list of paths/strings, returns per-input + aggregate. Anything that *produces* the input list — directory walking, tarball expansion, git plumbing, URL fetching — is aegis territory. No persistence, no temporal semantics, no streaming.
 
 Phase 13 is intentionally smaller than the original Phase 12 — it reuses the existing single-scan and correlation infrastructure rather than introducing new abstractions. The novel surface is the input-collection type, the group-level report, and the choice to bucket per-input findings into the existing correlation evaluator (which already accepts `&[EngineFindings]`) so cross-input correlation falls out for free.
 
@@ -274,7 +274,7 @@ Phase 7's `ThreatScoreboard` continues to work as-is for integer-based threshold
 
 **Hand-off from Phase 11.5/11.6 (introspection):** the `evidence` audit trail should consume `Engine::rule_metadata()` for per-rule provenance — `(rule_name, engine, version, threat_level, threshold)` per evidence entry, not just `(source, raw_score, calibrated_score)`. The rule-set fingerprint (`Shield::rule_set_fingerprint()`) should be recorded once per `ConfidenceScore` (or once per scan in the `ScanReport`-level wrapper) so a calibration audit trail can attribute each calibrated probability to a specific rule-set state. When calibration parameters drift across deployments, the fingerprint is the join key that ties an evidence entry back to the rule version that produced it.
 
-**Open question (2026-04-30, parallel to Phase 13):** with Phase 12 in aegis, does Phase 14 (confidence calibration / ensemble scoring) also belong to aegis? Ensemble combination across single-scan signals (string + similarity + classifier + llm + correlation) is naturally in-lcs because it operates on outputs already produced by lcs's engines. Cross-scan ensemble (adding session signals) is naturally in-aegis. The clean split is: lcs owns single-scan ensemble; aegis composes lcs output with session signal for the multi-scan ensemble. Decision pending until aegis's PRD lands.
+**Decision (2026-05-01).** lcs owns single-scan ensemble (this Phase 14, all sub-phases as scoped). aegis owns a *separate* multi-scan ensemble layer that combines lcs's per-scan `ConfidenceScore` with session-signal evidence, designed when aegis's PRD lands. Two ensemble layers, different evidence sets, no shared calibration code. Calibration functions live where the raw scores are produced: string `threat_level` integers, similarity cosine values, LLM verdict shapes, and correlation `composite_threat_level` are all lcs-internal; session-signal calibration is aegis-internal. The subprocess JSON contract (Q1 decided 2026-05-01) widens cleanly: `lcs scan --json` grows a `confidence` field; aegis parses it and folds in session-signal calibration on top.
 
 ### 14b — Calibration functions
 
