@@ -215,36 +215,30 @@ Phase 13 is intentionally smaller than the original Phase 12 — it reuses the e
 
 **Forward seed from Phase 11.5 (rule introspection):** if Phase 13 reshapes the correlation-rule loader (TOML → YAML, hot-reload, etc.), the new format must adopt the introspection pattern from 11.5 from day one — declarative metadata, contribute to a fingerprint when loaded, surface through a CLI view (`lcs correlations` or `lcs rules --kind=correlation`). No second-pass retrofit; design the contract before shipping.
 
-### 13a — `ScanGroup` and `GroupReport` types
+### 13a — `ScanGroup` and `GroupReport` types — **DONE 2026-05-01**
 
-- [ ] Create new module `src/scan_group.rs`:
-  - `pub struct ScanGroup` — collection of `(label: String, input: String)` pairs. Builder-ish API: `ScanGroup::new()`, `.add(label, input)`, `.add_file(path) -> io::Result<()>` convenience.
+- [x] Create new module `src/scan_group.rs`:
+  - `pub struct ScanGroup` — collection of `(label: String, input: String)` pairs. Builder-ish API: `ScanGroup::new()`, `.add(label, input)`, `.add_file(path) -> io::Result<Self>` convenience (chainable; consumes self).
   - `pub struct GroupReport`:
     - `per_input: Vec<(String, ScanReport)>` — per-input results, label-keyed.
-    - `aggregate_scoreboard: ThreatScoreboard` — class scores summed across all inputs.
-    - `cross_input_correlations: Vec<MatchCorrelation>` — correlations that fired across distinct inputs (each input becomes a separate `EngineFindings` bucket; the existing `CorrelationEngine::evaluate` does the rest).
-    - `summary: GroupSummary` — high-level aggregates (total findings, distinct threat classes, worst-offender input by cumulative score).
-- [ ] Extend `Shield`:
-  - `Shield::scan_group(&self, group: &ScanGroup) -> GroupReport` — scans each input via the existing `scan()` path, collects per-input reports, runs cross-input correlation, builds aggregates.
-  - The cross-input correlation step bundles each input's findings as a labelled `EngineFindings` bucket with a synthetic engine name (`"input:<label>"`). Same correlation rules that fire across engines today fire across inputs in this mode.
-- [ ] Add `pub mod scan_group;` to `src/lib.rs` and re-export `ScanGroup`, `GroupReport`, `GroupSummary`.
-- [ ] Unit tests:
-  - Empty group → empty report.
-  - Single-input group → behaves like `Shield::scan` wrapped in a group.
-  - Multi-input group with one bad + one clean input → per-input distinguishes correctly, aggregate scoreboard reflects only the bad one.
-  - Multi-input group where two inputs each contain one half of a `sandwich_attack` pair → cross-input correlation fires (delimiter manipulation in input A + prompt injection in input B).
+    - `aggregate_scoreboard: ThreatScoreboard` — class scores summed across all inputs (via new `ThreatScoreboard::merge`; first non-empty per-input scoreboard cloned as the seed so config weights inherit without double-application).
+    - `cross_input_correlations: Vec<MatchCorrelation>` — correlations that fired across distinct inputs (each input becomes a separate `EngineFindings` bucket with synthetic engine name `"input:<label>"`).
+    - `summary: GroupSummary` — total findings, distinct threat classes, worst-offender (lex-earlier label wins on cumulative ties).
+- [x] Extend `Shield`: `Shield::scan_group(&self, group: &ScanGroup) -> GroupReport`. Cross-input pass filters to `CorrelationType::CrossEngine` (only constraint that generalises across distinct inputs); skipped if fewer than two inputs have findings.
+- [x] Add `pub mod scan_group;` to `src/lib.rs` and re-export `ScanGroup`, `GroupReport`, `GroupSummary`.
+- [x] Unit tests (11 passing): empty group, single-input parity, multi-input distinguishes, cross-input MEC fires once (validates bug #4 fix), cross-input proximate doesn't fire, scoreboard aggregation, worst-offender lex tie-break, synthetic engine label preservation.
 
-### 13b — CLI surface
+### 13b — CLI surface — **DONE 2026-05-02**
 
-- [ ] Add `--group` flag (or `lcs scan-group` subcommand — decide in plan-mode for 13b based on which composes better with shell glob expansion). Accepts multiple file paths.
-- [ ] Output formats:
-  - `text`: per-input summary block (label + finding count + worst severity), then aggregate scoreboard, then cross-input correlations under `--correlations`.
-  - `json`: top-level `"per_input": [{"label": "...", "report": {...}}, ...]`, `"aggregate_scoreboard": {...}`, `"cross_input_correlations": [...]`, `"summary": {...}`.
-  - `quiet`: exit code only — `0` if every input is clean, `1` if any input has findings or any cross-input correlation fires, `2` on error.
-- [ ] Add `[scan_group]` section to `Config` / `DEFAULT_CONFIG`:
-  - `enable_cross_input_correlation: bool` (default `true`).
-  - `max_inputs: usize` (default 1000 — guardrail against unintended directory-recursion blow-ups).
-- [ ] Integration tests: multi-file fixtures in `tests/`, both clean-batch and mixed-batch cases.
+- [x] New subcommand `lcs scan-group <files>...` (D1: subcommand path chosen over `--group` flag — divergent output shape, no positional conflict with `Command::Scan`'s `Option<PathBuf>`).
+- [x] Output formats:
+  - `text`: per-input summary blocks → stderr; aggregate (under `--threat-scores`) → stderr; cross-input correlations (under `--correlations`) → stderr; summary line → stdout. Mirrors single-scan stderr-details / stdout-summary split.
+  - `json`: top-level `rule_set_fingerprint` + `per_input: [{label, report}]` + `aggregate_scoreboard` + `cross_input_correlations` + `summary`. Per-input `report` shape matches single-scan `lcs scan --json` (via shared `render_scan_report_json` helper) minus the fingerprint, which is lifted to the top.
+  - `quiet`: exit code only (0 if all clean and no cross-input correlations; 1 if findings or cross-input fire; 2 on error).
+- [x] `--max-inputs <N>` CLI flag, default 1000. Enforced before any I/O. **No `[scan_group]` config section** — D2 deferred per `feedback_simpler_path.md`; the CLI flag is the thinner shape.
+- [x] `enable_cross_input_correlation` not added — `correlation.enabled = false` already disables all correlation flow, including cross-input.
+- [x] Integration tests (6 passing): clean batch, mixed batch with per-input distinction, cross-input MEC fires once, max-inputs guardrail rejects oversized batch, quiet mode exit codes, JSON top-level shape validation.
+- [x] Helpers: `render_scan_report_json(report, min_severity, include_fingerprint)`, `render_group_json(group, min_severity)`, `output_group_text(group, scores, correlations, fingerprint)` in `src/report.rs`. Single-scan `output()` routed through the shared per-scan helper.
 
 ### 13c — Library docs and example
 

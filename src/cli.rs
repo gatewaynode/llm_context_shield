@@ -61,6 +61,51 @@ pub enum Command {
         show_fingerprint: bool,
     },
 
+    /// Scan multiple files together as a labelled group with cross-input correlation.
+    ///
+    /// Each positional argument is read as an input under its path-as-label.
+    /// Per-input `ScanReport`s appear under `per_input` in JSON output. The
+    /// `aggregate_scoreboard` sums each input's class scores;
+    /// `cross_input_correlations` fires for `CorrelationType::CrossEngine` rules
+    /// across distinct input buckets (synthetic engines `input:<label>`).
+    ScanGroup {
+        /// Input files (one or more)
+        #[arg(required = true, num_args = 1..)]
+        files: Vec<PathBuf>,
+
+        /// Output format: json, text, quiet  [default: text]
+        #[arg(short, long)]
+        format: Option<String>,
+
+        /// Minimum severity to report: low, medium, high, critical  [default: low]
+        #[arg(short, long)]
+        severity: Option<String>,
+
+        /// Disable specific scanners or rules (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        disable: Vec<String>,
+
+        /// Scan engine: simple, yara, syara  [default: simple]
+        #[arg(short = 'e', long)]
+        engine: Option<String>,
+
+        /// Include threat scores (per-input + aggregate) in output
+        #[arg(long)]
+        threat_scores: bool,
+
+        /// Show per-input + cross-input correlation detail in text output
+        #[arg(long)]
+        correlations: bool,
+
+        /// Append rule-set fingerprint to text output (always present in JSON)
+        #[arg(long)]
+        show_fingerprint: bool,
+
+        /// Reject groups larger than N inputs (guardrail vs. shell glob blow-ups)
+        #[arg(long, default_value_t = 1000)]
+        max_inputs: usize,
+    },
+
     /// Scaffold config and/or rules directories under XDG paths.
     ///
     /// With no flags, ensures the config dir and default `config.toml` exist.

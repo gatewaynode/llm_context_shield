@@ -4,89 +4,112 @@ Session-state notes. Rewritten at session end so the next session can pick up wi
 
 ---
 
-## State as of 2026-05-01 (compact-prep, end of Phase 13a session)
+## State as of 2026-05-02 (compact-prep, end of Phase 13b session)
 
-**Branch:** `main`. Phase 13a shipped, committed, pushed. Bug #4 (CrossEngine symmetric-pair doubling) fixed earlier in the same session as a Phase 13a prerequisite. Working tree clean. About to compact and start Phase 13b planning.
+**Branch:** `main`. Phase 13b shipped (CLI surface for `scan-group`); also added two dataflow docs and a new feedback memory. Working tree has uncommitted changes — **user will commit after the compact**.
 
-**Test count:** 378/378 (was 366 pre-13a). Clippy clean.
-**Cargo version:** 0.5.3. Installed binary still predates current head. Optional bump.
+**Test count:** 384/384 (was 378 pre-13b). Clippy clean with `--features cli,yara,syara`.
+**Cargo version:** still 0.5.3. Installed binary still predates current head. Optional bump.
 
 **Phase status (lcs):**
 - Phases 1–11, 11.5a–d, 11.6a–c — **complete**.
 - Phase 12 — **transferred to aegis** at `../aegis/` on 2026-04-30.
 - Phase 13a (Scan-group types + `Shield::scan_group`) — **complete 2026-05-01**.
-- Phase 13b (CLI surface) — **next workstream**.
-- Phase 13c (docs + example) — after 13b.
+- Phase 13b (CLI surface) — **complete 2026-05-02**.
+- Phase 13c (docs + example) — **next workstream** (or skip to Phase 14 if user prefers).
 - Phase 14a–d (single-scan ensemble) — after 13.
 
-**Sentrux:** quality_signal 6626 (was 6630 before 13a). Drift −4. Modularity unchanged at 4115 (raw 0.117, 24/26 cross-module). Well within the ~6300 watch threshold.
+**Sentrux:** quality_signal 6615 (was 6626 before 13b). Drift −11. Modularity 4077 (was 4115, raw 0.111). Equality 5789 (was 5861, raw 0.421). Well within the ~6300 watch threshold.
 
 ---
 
-## Phase 13a — what shipped
+## Phase 13b — what shipped
 
-New module `src/scan_group.rs`:
-- `ScanGroup` — chainable `new`/`add`/`add_file` builder, plus `len`/`is_empty`/`iter`.
-- `GroupReport` — `per_input: Vec<(String, ScanReport)>`, `aggregate_scoreboard: ThreatScoreboard`, `cross_input_correlations: Vec<MatchCorrelation>`, `summary: GroupSummary`.
-- `GroupSummary` — `total_findings`, `distinct_threat_classes`, `worst_offender_label`, `worst_offender_cumulative`.
-- `impl Shield { pub fn scan_group(&self, group: &ScanGroup) -> GroupReport }`.
+**`src/cli.rs`:** new `Command::ScanGroup` variant. Positional `files: Vec<PathBuf>` (`required=true, num_args=1..`), plus `format`/`severity`/`disable`/`engine`/`threat_scores`/`correlations`/`show_fingerprint` carried over from `Scan`, plus `--max-inputs <N>` (default 1000). Excludes `safe_only_passthrough`/`output` (D9 — multi-input passthrough has no coherent semantics).
 
-Companion changes:
-- `src/scoring.rs` — added narrow `ThreatScoreboard::merge(&mut self, other: &Self)` so the aggregate inherits per-input config weights without double-applying them.
-- `src/shield.rs` — `correlation_rules` field bumped to `pub(crate)` so the scan-group impl can read it from a sibling module.
-- `src/lib.rs` — `pub mod scan_group;` + re-exports of `ScanGroup`/`GroupReport`/`GroupSummary`.
+**`src/main.rs`:** new handler arm at line 167. Mirrors `Command::Scan`'s config-merge + severity/format validation, then enforces `--max-inputs` *before* any I/O (D8: shell-glob fail-fast), opens a `tracing::info_span!("scan_group", ...)`, builds the Shield, constructs the `ScanGroup` (rebinding in the loop because `add_file` consumes self), calls `shield.scan_group()`, dispatches by format. Exit 0 if all clean and no cross-input correlations; 1 if any findings or any cross-input fire; 2 on error.
 
-Decisions enacted (recorded for 13b/13c context):
-- **D1.** Module placement: own `src/scan_group.rs`, `impl Shield` block split across modules. shield.rs already at 653 lines; not adding more.
-- **D2.** Cross-input pass filters to `CrossEngine` rules only. `Ordered`/`Proximate`/`Combined` have byte-position semantics that don't generalize across distinct inputs.
-- **D3.** Synthetic engine label `"input:<label>"`. Findings cloned into the cross-input bucket carry the synthetic engine via `Finding::with_engine`. Per-input `ScanReport`s keep original engine names ("yara"/"syara"). User signed off on the JSON-bleed: cross-input correlation findings will show `engine: "input:<label>"` in JSON output.
-- **D4 (deferred).** `[scan_group]` config section not added in 13a; revisit in 13b only if the CLI needs it. Per `feedback_simpler_path.md`.
-- **Aggregate weight inheritance.** First non-empty per-input scoreboard cloned as the seed; subsequent ones merged via `merge` (which sums class scores + cumulative without re-applying weights). Cross-input correlation composite scores recorded via `record` so they get the inherited weights.
-- **Worst-offender tie-break.** Lex-earlier label wins on cumulative ties.
-- **Cross-input pass guard.** Skipped if fewer than two inputs have findings (no cross-input pairs to evaluate).
+**`src/report.rs`:** three new helpers.
+- `render_scan_report_json(report, min_severity, include_fingerprint)` — extracted from `output()`. Existing single-scan JSON path now routes through this. Two consumers now (D4).
+- `render_group_json(group, min_severity)` — top-level group JSON document. Lifts fingerprint to top level (all per-input share it), embeds each per-input `ScanReport` via `render_scan_report_json(... false)`.
+- `output_group_text(group, scores, correlations, fingerprint)` — text emission. Per-input headers + correlations to stderr, aggregate scoreboard to stderr (under `--threat-scores`), cross-input correlation detail to stderr (under `--correlations`), summary line to stdout. Mirrors single-scan stderr-details / stdout-summary split.
 
-Bug #4 prerequisite (resolved earlier this session, separate commit): `CorrelationEngine::evaluate` now canonicalizes symmetric-ref CrossEngine pairs (`eng_a > eng_b` suppressed when both refs share category, rule_name_pattern, and engine_filter). Six bundled `multi_engine_corroboration_*` tests + the engine-level test flipped from `out.len() == 2` to `out.len() == 1`. BUGS.md #4 marked RESOLVED.
+**`tests/integration.rs`:** `TempFiles` RAII fixture (Drop-based cleanup, per-test pid+name+index isolation) + six new tests. All passing:
+- `scan_group_clean_batch_exits_zero`
+- `scan_group_mixed_batch_exits_one_per_input_distinguishes`
+- `scan_group_cross_input_multi_engine_corroboration_fires_once` (validates bug #4 at CLI level)
+- `scan_group_max_inputs_rejects_oversized_batch`
+- `scan_group_quiet_mode_clean_exits_zero`
+- `scan_group_json_top_level_shape`
+
+**`tasks/todo.md`:** Phase 13a and 13b checkboxes flipped to `[x]` with completion-date headers and detailed bullet summaries of what shipped vs. what was deferred (`[scan_group]` config section deferred per D2; `enable_cross_input_correlation` not added because `correlation.enabled = false` already covers it).
+
+Decisions enacted (recorded for 13c context):
+- **D1.** New subcommand `Command::ScanGroup`, not a `--group` flag on `Scan`. User: "I prefer extra subcommand over excessive options."
+- **D2.** `--max-inputs <N>` is a CLI flag, default 1000. No `[scan_group]` config section. Per `feedback_simpler_path.md`.
+- **D3.** Synthetic engine label `"input:<label>"` (enacted in 13a) bleeds into JSON output. User signed off in 13a.
+- **D4.** `render_scan_report_json` extracted because two consumers exist (single-scan + scan-group). Drift risk would be real otherwise.
+- **D5.** Scan-group handler stays inline in main.rs (~110 lines added, total main.rs ~460, under 500 threshold). Defer extraction speculation per `feedback_simpler_path.md`.
+- **D6.** Raw path-as-label. `add_file` uses `path.to_string_lossy()`; CLI passes `PathBuf` through unchanged.
+- **D7.** No stdin sentinel (`lcs scan-group -` not supported). Required positional with `num_args=1..` rejects empty invocation.
+- **D8.** `--max-inputs` enforced before any I/O.
+- **D9.** No passthrough mode for scan-group.
+- **D10.** Tracing parity with single-scan (`scan_group` span shape mirrors `scan`).
 
 ---
 
-## Next session: Phase 13b plan
+## Also this session: dataflow docs + new feedback memory
 
-CLI surface for scan groups. Spec at `tasks/todo.md:237-247`.
+**`docs/scan-data-flow-simple.md`** (NEW, 141 lines). Renamed from `scan-data-flow.md`. Single-scan walkthrough for `lcs scan -p`: mermaid `flowchart TD` at top with file:line refs in node labels, numbered steps with letter sub-points, exit-code table, variations table, "Key invariants" section (normalize is the only mutation, severity filter runs twice by design, the `-p` two-stream contract).
 
-### Open architectural choice (Q4)
+**`docs/scan-group-data-flow-simple.md`** (NEW, 265 lines). Companion walkthrough for `lcs scan-group A.txt B.txt -f json`. Cross-references `scan-data-flow-simple.md` at unchanged steps; focuses on what scan-group *adds*: the per-input loop, the aggregate-scoreboard-with-weight-inheritance pattern (clone first non-empty + merge rest, no double-weighting), the cross-input pass with synthetic `"input:<label>"` engine bucketing, the lex-tie-break worst-offender, the bug #4 canonicalization invariant, the no-passthrough decision.
 
-**Q4.** `--group` flag on `Command::Scan` vs new `Command::ScanGroup` subcommand?
+**`~/.claude/projects/-Users-john-code-llm-context-shield/memory/feedback_dataflow_docs.md`** (NEW). Captures the format as a feedback memory so future sessions default to writing `docs/<feature>-data-flow.md` for any "walk me through X" request rather than answering chat-only. Format spec:
+1. Mermaid `flowchart TD` at top with file:line refs in node labels.
+2. Numbered walkthrough; sub-points use **A.**, **B.**, **C.** letters; each sub-point cites file:line.
+3. Tables for exit codes + variations.
+4. "Key invariants" section at the end with gotchas.
+5. For features built on top of others, cross-reference rather than duplicate.
 
-Preview-recommendation from the 13a session: **subcommand `lcs scan-group <files>...`**. Reasoning:
-- Output shape is structurally different (`per_input` + `aggregate_scoreboard` + `cross_input_correlations` + `summary`) — overloading `scan` requires a discriminator anyway.
-- Existing `Command::Scan` takes `file: Option<PathBuf>` (single positional). Multi-file would either need `Vec<PathBuf>` (breaking the single-file ergonomic) or a separate `--group <list>` flag (awkward for shell glob expansion).
-- Cleaner separation for future evolution (group-specific flags don't pollute the base `scan` namespace).
+`MEMORY.md` index line added. Note: this memory is project-scoped (lcs only). If the same default is wanted in aegis or elsewhere, copy the file into that project's memory dir when working there.
 
-Re-derive Q4 in plan-mode entry. Per `feedback_one_question_at_a_time.md`: surface as a discrete question, resolve before any code.
+---
 
-### Sub-steps (assuming subcommand path)
+## Working tree at session end
 
-1. **Add `Command::ScanGroup` to `src/cli.rs`.** Positional `files: Vec<PathBuf>`, plus the existing per-scan flags that still apply: `format` (text/json/quiet), `severity`, `disable`, `engine`, `correlations` (per-input + cross-input detail in text), `show_fingerprint`. Reject `safe_only_passthrough`/`output` — those are single-input concepts. Likely also add `--max-inputs <N>` (default 1000) as the guardrail mentioned in spec D7; defer the `[scan_group]` config section unless a real consumer wants it.
-2. **Implement handler in `src/main.rs`.** Build inputs via `ScanGroup::new().add_file(path)?` per positional. Apply `--max-inputs` guardrail. Run `shield.scan_group(&group)`. Emit output:
-   - **text:** per-input block (label + finding count + worst severity + per-input correlations under `--correlations`), then aggregate scoreboard, then `cross_input_correlations` (under `--correlations`).
-   - **json:** `{"per_input": [{"label": ..., "report": {...}}, ...], "aggregate_scoreboard": {...}, "cross_input_correlations": [...], "summary": {...}, "rule_set_fingerprint": "..."}`. Note: `ScanReport` doesn't derive `Serialize` (existing report.rs builds JSON manually via `serde_json::json!` to handle severity-filtering at output time). 13b's handler will need the same pattern — build the per-input `report` JSON object explicitly with filtered findings, scores, correlations, fingerprint. Refactor opportunity: extract a `render_scan_report_json(&ScanReport, min_severity) -> serde_json::Value` helper if both `report::output` and the new group handler want it.
-   - **quiet:** exit 0 if every per-input is clean AND no cross-input correlations; exit 1 if any per-input has findings or any cross-input correlation fires; exit 2 on error.
-3. **Integration tests in `tests/integration.rs`.** Multi-file fixtures (write to `tempdir`-style temp paths via `assert_cmd`'s patterns — note: no `tempfile` dev-dep, use the project's existing fixture pattern). Cases: clean batch (exit 0), mixed batch (per-input distinguishes, aggregate reflects), cross-input multi_engine_corroboration_prompt_injection fires once across two PI-bearing files, JSON shape matches the documented contract, --max-inputs rejects oversized groups, quiet mode exit codes correct.
+Uncommitted changes (user will commit after compact):
 
-### Constraints carried into 13b
+```
+ M src/cli.rs
+ M src/main.rs
+ M src/report.rs
+ M tasks/todo.md
+ M tests/integration.rs
+?? docs/scan-data-flow-simple.md
+?? docs/scan-group-data-flow-simple.md
+?? tasks/TUNING.md          ← NOT from this session; user-created earlier on 2026-05-02 (05:40)
+```
 
-- Per `feedback_simpler_path.md`: don't add the `[scan_group]` config section unless CLI needs it. The `--max-inputs` flag with a CLI default is the thinner shape than a config section. Don't add `enable_cross_input_correlation` config — `correlation.enabled = false` already disables all correlation.
-- Per `feedback_one_question_at_a_time.md`: resolve Q4 first. After Q4 lands, re-derive any sub-questions about the per-input JSON helper extraction.
-- `ScanReport` is intentionally not `Serialize`-derived (per the comment at `src/scanner.rs:177-180`). Don't change that — match the existing pattern of building JSON via `serde_json::json!`.
-- Per CLAUDE.md: run sentrux scan + health after 13b. Watch modularity (current 4115). If 13b's CLI handler bloat pushes equality (currently 5861) further, consider extracting the JSON-render helper to its own module.
+`tasks/TUNING.md` is a real-world rule-tuning notebook the user created externally before this session started — leave it as untracked unless user pulls it into the commit explicitly.
 
-### Test count
+This `tasks/CONTINUITY.md` rewrite is the only change made *after* the working-tree snapshot was taken; will appear as ` M tasks/CONTINUITY.md` once written.
 
-378 baseline → ~384 after 13b (~6 integration tests).
+---
 
-### Bug #4 sanity
+## Next session: Phase 13c plan (preview)
 
-Now that scan_group exercises the CrossEngine rules across synthetic engine buckets, the bug #4 fix is validated end-to-end (`cross_input_multi_engine_corroboration_fires_once` test in `src/scan_group.rs`). 13b integration tests will cover it again at the CLI level.
+Spec at `tasks/todo.md:249-254`. Three deliverables:
+
+1. **`examples/batch_scan.rs`** — minimal end-to-end demo of `Shield::scan_group` from a directory of files, showing the `GroupReport` shape. Should compile under `cargo build --examples`. Reference the new `docs/scan-group-data-flow-simple.md` for the conceptual map.
+2. **`docs/rule-authoring.md`** — short note that the existing `CrossEngine` correlation type doubles as cross-input correlation in scan-group mode. Cross-link to `docs/scan-group-data-flow-simple.md` rather than re-explaining.
+3. **README "Library Usage"** — 5-line `Shield::scan_group` snippet alongside the existing `Shield::scan` example.
+
+Plus a few orphan items flagged for 13c-or-later:
+- **PRD §6.4** — note that cross-input correlation findings carry `engine: "input:<label>"` (D3).
+- **`docs/scan-data-flow.md` index** — consider a small `docs/README.md` or a section in the main README that lists the dataflow docs (will grow as more features get the treatment).
+- **Cargo bump 0.5.3 → 0.5.4** + `cargo install --path .` to refresh the binary.
+
+If user prefers to skip 13c and jump to Phase 14 (single-scan ensemble), 13c can defer indefinitely — the load-bearing surface (CLI + library API) is shipped.
 
 ---
 
@@ -94,11 +117,12 @@ Now that scan_group exercises the CrossEngine rules across synthetic engine buck
 
 | Track | Item | Priority |
 |---|---|---|
-| lcs roadmap | Phase 13c (docs, README, `examples/batch_scan.rs`, PRD §6.4 `engine: "input:<label>"` provenance note) | After 13b |
-| lcs roadmap | Phase 14a–d (single-scan ensemble) | After 13c |
+| lcs roadmap | Phase 13c (examples/, docs polish, PRD §6.4 note) | After this compact |
+| lcs roadmap | Phase 14a–d (single-scan ensemble / ConfidenceScore) | After 13c (or skip 13c) |
 | lcs bug | #5 misleading fast-path comment | Low cosmetic |
-| lcs bug | #6 redundant severity filter | Low |
+| lcs bug | #6 redundant severity filter | Low (acknowledged in `docs/scan-data-flow-simple.md` invariants section as "by design") |
 | lcs ops | Cargo 0.5.3 → 0.5.4 + reinstall | Trivial |
+| lcs hygiene | `tasks/TUNING.md` integration into rule-authoring workflow | User-driven |
 | lcs backlog | Sentrux modularity bottleneck deeper-dive | Hygiene |
 | lcs backlog | Cumulative-scoring inflation | Medium |
 | lcs backlog | Synonym-aware prescan, multilingual model swap, latency benchmark, threshold-tuning corpus, encrypted bundled rules | Research/hygiene |
@@ -108,31 +132,34 @@ Now that scan_group exercises the CrossEngine rules across synthetic engine buck
 
 ## File map
 
-- `tasks/todo.md` — phase plan. Phase 13a marker still says "next workstream"; **needs update** to mark 13a complete. Phase 13b spec at lines 237-247 is the read-target for next session.
+- `tasks/todo.md` — phase plan. Phases 13a/13b marked DONE; 13c spec at lines 249-254 is the read-target for next session.
 - `tasks/BUGS.md` — #1, #2, #3, #4 resolved. #5, #6 still open.
 - `tasks/CONTINUITY.md` — this file.
 - `tasks/04-25-2026__todo.md` — pre-truncation archive.
 - `tasks/SYARA-X-WISHLIST.md` — pre-existing, untouched.
+- `tasks/TUNING.md` — NEW (user-created externally on 2026-05-02). Real-world rule-tuning notebook.
 - `tasks/ARCHITECTURE.md`, `tasks/lessons.md` — unchanged this session.
 - `tasks/BACKLOG.md` — unchanged.
-- `~/.claude/plans/humble-dancing-falcon.md` — stale (still holds shipped 11.6b plan). Overwrite when planning Phase 13b.
-- `~/.claude/skills/safe-fetch/SKILL.md` — current with project version (synced 2026-05-01).
-- `PRD.md` — 13a didn't touch it. The §6.4 `engine: "input:<label>"` provenance note is a 13c task.
-- `src/scan_group.rs` — NEW, all of 13a.
-- `src/scoring.rs` — `merge` method added.
-- `src/shield.rs` — `correlation_rules` field is now `pub(crate)`.
-- `src/lib.rs` — `pub mod scan_group;` + re-exports.
-- `src/correlation/mod.rs` — bug #4 fix (canonicalization).
-- `src/correlation/bundled.rs` — bug #4 test updates.
+- `~/.claude/plans/humble-dancing-falcon.md` — current 13b plan (just shipped). Overwrite when planning 13c.
+- `docs/scan-data-flow-simple.md` — NEW. Single-scan dataflow walkthrough.
+- `docs/scan-group-data-flow-simple.md` — NEW. Scan-group dataflow walkthrough.
+- `docs/rule-authoring.md` — needs 13c update (cross-input correlation note).
+- `docs/rule-introspection.md`, `docs/migration-from-simple.md`, `docs/semantic-rules.md` — untouched.
+- `PRD.md` — needs 13c update (§6.4 `engine: "input:<label>"` provenance).
+- `src/scan_group.rs` — unchanged this session (13a's API still complete).
+- `src/scoring.rs`, `src/shield.rs`, `src/correlation/*` — unchanged this session.
+- `src/cli.rs`, `src/main.rs`, `src/report.rs`, `tests/integration.rs` — modified by 13b.
+- `~/.claude/projects/-Users-john-code-llm-context-shield/memory/feedback_dataflow_docs.md` — NEW.
+- `~/.claude/projects/-Users-john-code-llm-context-shield/memory/MEMORY.md` — index line added.
 - `../aegis/` — sister project. Untouched this session.
 
 ---
 
 ## Memory state
 
-No new memories captured this session. Existing memories that applied:
-- `feedback_simpler_path.md` — drove decision to defer `[scan_group]` config section (D4) and to not derive Serialize on `GroupReport`.
-- `feedback_one_question_at_a_time.md` — drove the Q4 deferral to its own 13b plan-mode entry.
+- **NEW:** `feedback_dataflow_docs.md` — for "walk me through X" / dataflow / command-trace requests, default to writing `docs/<feature>-data-flow.md` with mermaid + numbered walkthrough + invariants. Project-scoped to lcs.
+- `feedback_simpler_path.md` — drove D2 (no `[scan_group]` config), D5 (no premature handler extraction).
+- `feedback_one_question_at_a_time.md` — drove Q4 surfacing as a discrete question before plan-mode entry.
 - `project_yarax.md`, `project_syara.md` — context for engine bucket labels in cross-input correlation tests.
 - `feedback_quote_seeding.md` — not triggered this session.
 
@@ -140,17 +167,18 @@ No new memories captured this session. Existing memories that applied:
 
 ## Sticky reminders for the next session
 
-- **Per CLAUDE.md (lcs):** run sentrux scan + health after 13b. Watch modularity (4115) and equality (5861) — equality dropped slightly in 13a; if 13b's main.rs handler grows substantially, consider extracting JSON rendering into a helper module.
-- **Per CLAUDE.md:** plan-mode for 13b before any code. The flag-vs-subcommand decision (Q4) is the single architectural question to resolve first.
-- **Per `feedback_simpler_path.md`:** thin shape for 13b. CLI flag default for `--max-inputs` over a config section. No `[scan_group]` config unless a current consumer needs it.
-- **Per `feedback_one_question_at_a_time.md`:** Q4 first. Then any sub-questions (JSON helper extraction, --max-inputs default).
-- **Spec quirk:** `ScanReport` is intentionally not `Serialize`. Don't change. Build the per-input JSON via `serde_json::json!` like `src/report.rs::output` does today. The pattern is already in the codebase to copy.
-- **Bug #4 is fixed.** Phase 14 calibration concerns are resolved; no need to revisit before 14.
+- **User will commit the working tree first.** Don't pre-empt: the next session opens with a clean working tree assumed (or the user may have staged/split the commit). Read `git status` before assuming anything.
+- **Per `feedback_dataflow_docs.md`:** any "walk me through X" / dataflow request → write `docs/<feature>-data-flow.md` by default. Cross-reference simpler docs rather than duplicating content.
+- **Per CLAUDE.md:** plan-mode for 13c before any code (it's three deliverables — examples, docs, README — borderline trivial but worth a quick plan). Sentrux scan + health post-13c.
+- **Per `feedback_simpler_path.md`:** thin shape for 13c. The README "Library Usage" snippet is 5 lines, not a tutorial. The rule-authoring note is a paragraph + cross-link, not a section. The example should be one self-contained ~30-line `main()`, not a framework.
+- **Per `feedback_one_question_at_a_time.md`:** if 13c surfaces architectural choices (e.g., "should the example use the bundled rules or a custom config?"), surface them sequentially before the plan.
+- **Spec quirks unchanged from 13b:** `ScanReport` is intentionally not `Serialize`; build per-scan JSON via `render_scan_report_json`. `MatchCorrelation` is `Serialize`-derived. `ThreatScoreboard` is `Serialize`-derived.
+- **Bug #4 is fixed and validated end-to-end at the CLI level.** Phase 14 calibration concerns are resolved.
 
 ---
 
 ## Sentrux baseline
 
-Last scan (2026-05-01, post-13a): `quality_signal = 6626`. Bottleneck: **modularity (4115)**, raw 0.117, with 24/26 cross-module edges. Secondary: equality (5861, raw 0.414).
+Last scan (2026-05-02, post-13b): `quality_signal = 6615`. Bottleneck: **modularity (4077)**, raw 0.111, with 26 cross-module edges (was 24 before 13b — the `report.rs ↔ scan_group.rs` import added in 13b accounts for the bump). Secondary: equality (5789, raw 0.421).
 
-13a added one new module (`scan_group.rs`) but didn't shift modularity raw — sentrux's module detection didn't penalize. Equality dropped 24 points (5885 → 5861). Run scan + health before planning 13b (baseline) and after each 13b sub-step (catch drift).
+Drift since 13a baseline (qs 6626): −11. Within phase-completion noise. If 13c adds substantial cross-module wiring, watch for modularity drift below ~3800 or qs drift below ~6300.

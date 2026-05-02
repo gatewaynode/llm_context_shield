@@ -9,7 +9,8 @@ use llm_context_shield::cli::{Cli, Command};
 use llm_context_shield::config::Config;
 use llm_context_shield::engines::{self, RuleMeta};
 use llm_context_shield::input::read_input;
-use llm_context_shield::report::{output, write_passthrough};
+use llm_context_shield::report::{output, output_group_text, render_group_json, write_passthrough};
+use llm_context_shield::scan_group::ScanGroup;
 use llm_context_shield::scanner::{Category, Severity};
 use llm_context_shield::scanners;
 use llm_context_shield::shield::Shield;
@@ -160,6 +161,129 @@ fn main() {
             }
 
             let exit_code = if has_findings { 1 } else { 0 };
+            info!(exit_code, "exit");
+            process::exit(exit_code);
+        }
+        Command::ScanGroup {
+            files,
+            format,
+            severity,
+            disable,
+            engine,
+            threat_scores,
+            correlations,
+            show_fingerprint,
+            max_inputs,
+        } => {
+            let scan_cfg = config.scan.as_ref();
+            let format = format
+                .or_else(|| scan_cfg.and_then(|s| s.format.clone()))
+                .unwrap_or_else(|| "text".to_string());
+            let severity = severity
+                .or_else(|| scan_cfg.and_then(|s| s.severity.clone()))
+                .unwrap_or_else(|| "low".to_string());
+            let disable = if disable.is_empty() {
+                scan_cfg.and_then(|s| s.disable.clone()).unwrap_or_default()
+            } else {
+                disable
+            };
+            let engine_name = engine
+                .or_else(|| scan_cfg.and_then(|s| s.engine.clone()))
+                .unwrap_or_else(|| "simple".to_string());
+
+            let min_severity = Severity::from_str_loose(&severity).unwrap_or_else(|| {
+                error!(value = %severity, "invalid severity");
+                eprintln!("Invalid severity: {severity}. Use: low, medium, high, critical");
+                process::exit(2);
+            });
+
+            if !matches!(format.as_str(), "json" | "text" | "quiet") {
+                error!(value = %format, "invalid format");
+                eprintln!("Invalid format: {format}. Use: json, text, quiet");
+                process::exit(2);
+            }
+
+            if files.len() > max_inputs {
+                error!(input_count = files.len(), max_inputs, "exceeds --max-inputs");
+                eprintln!(
+                    "Error: {} input(s) exceeds --max-inputs={max_inputs}",
+                    files.len()
+                );
+                process::exit(2);
+            }
+
+            let _scan = tracing::info_span!(
+                "scan_group",
+                input_count = files.len(),
+                engine = %engine_name,
+                format = %format,
+                severity = %severity,
+            )
+            .entered();
+
+            let shield = Shield::builder()
+                .engine(&engine_name)
+                .min_severity(min_severity)
+                .disable(disable)
+                .config(config)
+                .build()
+                .unwrap_or_else(|err| {
+                    error!(value = %engine_name, "invalid engine");
+                    eprintln!("{err}");
+                    process::exit(2);
+                });
+
+            let mut group = ScanGroup::new();
+            for path in &files {
+                group = match group.add_file(path) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        error!(error = %e, path = %path.display(), "failed to read input");
+                        eprintln!("Error reading {}: {e}", path.display());
+                        process::exit(2);
+                    }
+                };
+            }
+
+            let group_report = shield.scan_group(&group);
+            info!(
+                per_input = group_report.per_input.len(),
+                cross_input_correlations = group_report.cross_input_correlations.len(),
+                total_findings = group_report.summary.total_findings,
+                "scan_group complete"
+            );
+
+            let any_findings = group_report.summary.total_findings > 0;
+            let any_cross_input = !group_report.cross_input_correlations.is_empty();
+
+            match format.as_str() {
+                "json" => {
+                    let json = render_group_json(&group_report, min_severity);
+                    let stdout = io::stdout();
+                    let mut out = stdout.lock();
+                    if let Err(e) = serde_json::to_writer_pretty(&mut out, &json) {
+                        error!(error = %e, "JSON serialisation failed");
+                        eprintln!("JSON serialisation failed: {e}");
+                        process::exit(2);
+                    }
+                    let _ = writeln!(out);
+                }
+                "quiet" => {}
+                _ => {
+                    if let Err(e) = output_group_text(
+                        &group_report,
+                        threat_scores,
+                        correlations,
+                        show_fingerprint,
+                    ) {
+                        error!(error = %e, "failed to write output");
+                        eprintln!("Error writing output: {e}");
+                        process::exit(2);
+                    }
+                }
+            }
+
+            let exit_code = if any_findings || any_cross_input { 1 } else { 0 };
             info!(exit_code, "exit");
             process::exit(exit_code);
         }
