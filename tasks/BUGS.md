@@ -42,22 +42,12 @@ SYARA rules store `threat_level` and `threshold` as quoted strings (e.g., `threa
 
 ---
 
-## 4. CrossEngine correlations fire twice for symmetric category pairs
+## 4. CrossEngine correlations fire twice for symmetric category pairs — RESOLVED
 
 **Priority**: Medium
-**File**: `src/correlation/mod.rs:99-142`, bundled rule `multi_engine_corroboration_response_steering` (`src/correlation/bundled.rs:147-158`)
+**File**: `src/correlation/mod.rs`, bundled rules in `src/correlation/bundled.rs`
 **Found**: 2026-04-25 codebase review
-
-`CorrelationEngine::evaluate` iterates every ordered pair `(i, j)` with `i != j`. For `CrossEngine` rules whose `match_refs[0].category == match_refs[1].category` (the bundled response-steering corroboration is exactly this shape), one logical "two engines saw the same category" event produces *two* `MatchCorrelation` entries — one for `(yara, syara)` and one for `(syara, yara)`. The test at `src/correlation/mod.rs:491-505` documents the doubling as expected behavior, but this leaks duplicate-looking entries into JSON output and double-scores the composite threat.
-
-**Impact**: A single corroborated finding contributes `2 × composite_threat_level` to `cumulative` (via `Shield::scan` at `src/shield.rs:80-82`). For the bundled rule that's `2 × 8 = 16` instead of `8`. Operators reading the JSON `correlations[]` array see the same evidence listed twice with reordered findings.
-
-**Fix options** (decide before patching):
-- (a) For `CrossEngine` rules with symmetric category, canonicalize the pair (`eng_a < eng_b` lexically) so only one fires. Keeps semantics intuitive; matches what the rule author likely intended.
-- (b) Generalize: dedupe by unordered finding-pair key after evaluation. Heavier, but fixes any future symmetric-rule shape (`Combined` with same category on both refs has the same issue today, though no bundled rule hits it).
-- (c) Document the doubling as load-bearing and leave alone. Requires updating PRD/rule-authoring docs.
-
-Recommended: (a) — narrow, targeted, no impact on `Ordered`/`Proximate` pairs which already discriminate by position.
+**Resolved**: 2026-05-01 — applied option (a) with a sharper predicate. `CorrelationEngine::evaluate` now suppresses the descending ordering when the rule's two `MatchRef`s describe the *same* constraint (same `category`, same `rule_name_pattern`, same `engine_filter`) under `CrossEngine`. Six bundled `multi_engine_corroboration_*` rules (PI, Jailbreak, InstructionOverride, DataExfiltration, RefusalSuppression, ResponseSteering) all hit this shape — each now fires once per unordered pair of distinct buckets. The full-equality predicate (vs the BUGS.md text's "symmetric category" phrasing) preserves asymmetric same-category rules where the two refs differ by `rule_name_pattern` or `engine_filter`. Tests updated: `correlation/mod.rs::cross_engine_requires_distinct_buckets` and the six `bundled.rs::multi_engine_corroboration_*_fires_across_buckets` cases all flip `out.len() == 2` → `out.len() == 1`.
 
 ---
 
@@ -101,9 +91,9 @@ Larger changes flagged by the 2026-04-25 review. Not bugs; would benefit from th
 
 **Scope**: `src/shield.rs:scan`, `src/report.rs:output`, `src/main.rs`. Decide whether output-time re-filtering is the contract or vestigial; document or remove. S.
 
-## C. Resolve CrossEngine symmetric-pair semantics (bug 4)
+## C. Resolve CrossEngine symmetric-pair semantics (bug 4) — DONE 2026-05-01
 
-**Scope**: `src/correlation/mod.rs::evaluate`, the `multi_engine_corroboration_response_steering` bundled rule, and the test at `src/correlation/mod.rs:491-505` that currently asserts the doubling. Picking option (a) above is small (~10 lines + test update); picking (b) is larger. M.
+Resolved as part of Phase 13 prep. See bug #4 entry above.
 
 ## D. Extract `DEFAULT_PROXIMITY_WINDOW` constant
 

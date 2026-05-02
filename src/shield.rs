@@ -54,7 +54,7 @@ pub struct Shield {
     engine: Box<dyn Engine>,
     min_severity: Severity,
     disabled: Vec<String>,
-    correlation_rules: Vec<CorrelationRule>,
+    pub(crate) correlation_rules: Vec<CorrelationRule>,
     rule_set_fingerprint: RuleSetFingerprint,
 }
 

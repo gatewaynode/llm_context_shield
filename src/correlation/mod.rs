@@ -134,6 +134,14 @@ impl CorrelationEngine {
                     if !constraint_satisfied(rule.constraint, eng_a, fa, eng_b, fb) {
                         continue;
                     }
+                    if rule.constraint == CorrelationType::CrossEngine
+                        && ref_a.category == ref_b.category
+                        && ref_a.rule_name_pattern == ref_b.rule_name_pattern
+                        && ref_a.engine_filter == ref_b.engine_filter
+                        && eng_a > eng_b
+                    {
+                        continue;
+                    }
                     out.push(MatchCorrelation::new(rule, vec![(*fa).clone(), (*fb).clone()]));
                 }
             }
@@ -488,7 +496,9 @@ mod tests {
             "CrossEngine should not fire within a single bucket"
         );
 
-        // One finding in each bucket → SHOULD fire (twice — symmetric pairs).
+        // One finding in each bucket → fires once. Symmetric refs (same
+        // category, no rule_name_pattern, no engine_filter) are canonicalized
+        // so a single unordered pair produces a single MatchCorrelation.
         let pair = vec![
             bucket("yara", vec![finding(Category::PromptInjection, "a", 0..5)]),
             bucket(
@@ -499,8 +509,8 @@ mod tests {
         let out = CorrelationEngine::evaluate(&pair, &[r]);
         assert_eq!(
             out.len(),
-            2,
-            "CrossEngine should fire for both ordered pairings of distinct buckets"
+            1,
+            "symmetric CrossEngine fires once per unordered pair of distinct buckets"
         );
     }
 

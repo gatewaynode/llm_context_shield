@@ -28,6 +28,7 @@ pub mod logging;
 #[cfg(feature = "cli")]
 pub mod report;
 pub mod rules;
+pub mod scan_group;
 pub mod scanner;
 pub mod scanners;
 pub mod scoring;
@@ -40,6 +41,7 @@ pub use correlation::{
     MatchRef,
 };
 pub use engines::Engine;
+pub use scan_group::{GroupReport, GroupSummary, ScanGroup};
 pub use scanner::{Category, Finding, ScanReport, Severity};
 pub use scoring::ThreatScoreboard;
 pub use shield::{Shield, ShieldBuilder, ShieldError};

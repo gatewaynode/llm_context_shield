@@ -327,8 +327,8 @@ mod tests {
             vec![finding(Category::PromptInjection, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        // CrossEngine fires for both ordered pairings of distinct buckets.
-        assert_eq!(out.len(), 2);
+        // Symmetric CrossEngine rule fires once per unordered pair of buckets.
+        assert_eq!(out.len(), 1);
         assert!(
             out.iter().all(|c| c.composite_threat_class == "multi_engine_corroboration"),
         );
@@ -342,7 +342,7 @@ mod tests {
             vec![finding(Category::Jailbreak, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
@@ -353,7 +353,7 @@ mod tests {
             vec![finding(Category::InstructionOverride, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
@@ -364,7 +364,7 @@ mod tests {
             vec![finding(Category::DataExfiltration, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
             vec![finding(Category::RefusalSuppression, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
             vec![finding(Category::ResponseSteering, 50..60)],
         );
         let out = CorrelationEngine::evaluate(&bs, &[r]);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
     }
 
     // ── FP: a single ref present (without its partner) does not fire ──

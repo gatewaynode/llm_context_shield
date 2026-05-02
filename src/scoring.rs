@@ -118,6 +118,21 @@ impl ThreatScoreboard {
         self.class_scores.iter().map(|(k, &v)| (k.as_str(), v))
     }
 
+    /// Sum another scoreboard's class scores and cumulative into this one.
+    ///
+    /// `other`'s `class_weights` and `escalation_*` settings are ignored;
+    /// only the accumulator state is folded in. Use this when aggregating
+    /// per-input scoreboards (e.g. `Shield::scan_group`) so that each
+    /// input's already-weighted cumulative is preserved without
+    /// double-applying weights at aggregate time.
+    pub fn merge(&mut self, other: &Self) {
+        for (class, score) in other.class_scores() {
+            let entry = self.class_scores.entry(class.to_string()).or_insert(0);
+            *entry = entry.saturating_add(score);
+        }
+        self.cumulative = self.cumulative.saturating_add(other.cumulative);
+    }
+
     /// Cross-branch escalation: if any *other* class exceeds
     /// `escalation_threshold`, reduce this rule's effective threshold.
     fn effective_threshold(&self, threshold: i32, threat_class: &str) -> i32 {
