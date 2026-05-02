@@ -93,7 +93,7 @@ Capabilities that combine signals across rules, engines, scans, or sessions. The
 | Heuristic threat scoring | 7 | ✅ Shipped | Per-class and cumulative threat accumulators. Threshold-gated rules can stay silent until cheaper rules raise suspicion. |
 | Cross-rule correlation | 11 | ✅ Shipped | Rules that fire only when two findings co-occur (proximate, ordered, combined, or cross-engine). Composite scores feed back into the scoreboard. |
 | Session tracking | 12 | ↗️ aegis | Transferred to [aegis](../../aegis) on 2026-04-30. Per-session history, multi-turn patterns (crescendo, frequency, spread, spike), and any signals that require state across scans live there, not in lcs. |
-| Scan groups | 13 | 📅 Roadmap | Orderless multi-input correlation. Per-input results plus group-level aggregations. Confirmed in lcs (2026-05-01); cross-input correlation reuses the existing `CorrelationEngine`. |
+| Scan groups | 13 | ✅ Shipped | Orderless multi-input correlation. Per-input results plus group-level aggregations. Cross-input correlation reuses `CorrelationEngine` with each input bucketed as a synthetic engine labelled `input:<label>` — that label appears as the `engine` field on cross-input correlation findings. |
 | Confidence calibration | 14 | 📅 Roadmap | Calibrated probability estimates combining evidence from string matches, semantic similarity, LLM verdicts, and correlation into a unified per-scan confidence score. *Single-scan* ensemble only (decided 2026-05-01); the *multi-scan* ensemble that adds session-signal evidence is a separate layer in aegis. |
 
 ### 4.4 Reporting

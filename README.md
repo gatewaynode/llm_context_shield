@@ -266,6 +266,24 @@ if !report.is_clean() {
 
 See `examples/embed.rs` for a complete working example and `examples/custom_engine.rs` for implementing a custom scan engine.
 
+Scan multiple inputs together with cross-input correlation:
+
+```rust
+use llm_context_shield::{Shield, scan_group::ScanGroup};
+
+let shield = Shield::builder().build()?;
+let group = ScanGroup::new()
+    .add_file("alice.txt")?
+    .add_file("bob.txt")?;
+
+let report = shield.scan_group(&group);
+if let Some(label) = &report.summary.worst_offender_label {
+    println!("Worst offender: {label}");
+}
+```
+
+See `examples/batch_scan.rs` for a full directory-scanning example with cross-input correlation output.
+
 ## Architecture
 
 > See [tasks/ARCHITECTURE.md](tasks/ARCHITECTURE.md) for detailed design and Mermaid diagrams.

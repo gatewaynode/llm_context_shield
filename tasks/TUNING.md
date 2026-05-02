@@ -54,3 +54,41 @@ either tighten the rule, add an exclusion, or accept the trade-off.
 ### Cross-cutting note (both findings)
 
 The GitHub Releases API is a high-value source for any agent doing version-bump work. Both rules above firing on the same response means the *combined* signal-to-noise on this endpoint is currently bad enough that a user is forced to either bypass the scan or `--disable` rules per-call. Worth treating "GitHub Releases API JSON" as a benchmark fixture for tuning passes.
+
+## 2026-05-02 — OpenTofu docs HTML: zero-width spaces in rendered docs trip `hidden_content`
+
+- **Source**: `curl -fsSL "https://opentofu.org/docs/language/state/encryption/"`
+- **Content type**: HTML (Docusaurus-rendered documentation page, ~430 KB)
+- **Verdict**: false positive (high-volume noise — 25+ HIGH hits in a single page)
+- **Engine / Rule / Severity**: simple / `hidden_content` / HIGH
+- **Match**: `U+200B` (zero-width space), single codepoints scattered through the body at byte offsets 47105, 47642, 48597, 50240, 50880, 51642, 82990, 90703, 90913, 101619, 117264, 128840, 163861, 164046, 174213, 180156, 185621, 233959, 246383, 254043, 335725, 335915, 342630, 350701, 417562, ...
+- **Surrounding context**: Docusaurus (and similar static-site generators) inject U+200B into rendered HTML for word-break hints inside long identifiers, code samples, breadcrumb separators, and search-index targets. They are placed by the framework, not by content authors, and a browser renders them invisibly. The OpenTofu docs site (built with Docusaurus) carries dozens per page on long technical documents.
+- **Why FP**: Zero-width characters in *user-authored* content (markdown, comments, prompts) are a real exfiltration / steganography signal and HIGH is correct there. But in *framework-rendered* output, they are routine layout padding. A HIGH per-codepoint fires N times on a single page, drowning the alert log and pushing users to disable the rule wholesale — which then loses the signal in user content.
+- **Suggested adjustment**:
+  1. Detect HTML content (sniff `<!doctype html`, `<html`, or `Content-Type: text/html` if upstream passes it). For HTML, suppress U+200B inside `<code>`, `<pre>`, navigation elements, and known SSG class-name hints (`.menu`, `.breadcrumb`, `.token`).
+  2. Or: switch from per-codepoint HIGH to a single per-document finding ("N zero-width characters detected in HTML body") with severity scaled by *density per KB*. A documentation page with 25 ZWS in 430 KB is 0.06/KB; an exfiltration payload typically has them clustered in a single short string.
+  3. Or: when content type is HTML, downgrade isolated ZWS to LOW; keep HIGH only when ZWS are adjacent to other suspicious markers (long base64, hex sequences, or unusual unicode in close proximity).
+- **Reporter / project**: `infra/gitea` — fetching OpenTofu state-encryption docs to verify the `TF_ENCRYPTION` JSON shape before adopting state encryption for per-agent token storage.
+
+## 2026-05-02 — OpenTofu docs HTML: URL paths and example KMS resource paths trip `hidden_content` base64 detector
+
+- **Source**: same as above (`opentofu.org/docs/language/state/encryption/`)
+- **Content type**: HTML
+- **Verdict**: false positive
+- **Engine / Rule / Severity**: simple / `hidden_content` / MEDIUM
+- **Match**: Several "Suspicious base64-encoded content" hits, including:
+  - `id/locations/global/keyRings/ringid/cryptoKeys/keyid` (a GCP KMS resource-path example used to illustrate the `gcp_kms` key provider config)
+  - `/docs/language/settings/backends/azurerm/` (an internal docs site URL path)
+  - `com/opentofu/opentofu/tree/main/internal/encryption/keyprovider/...` and `.../method/encryption/...` (GitHub source-tree URLs cited in the docs)
+  - `11/website/docs/language/state/encryption` (a versioned docs path)
+- **Surrounding context**: All matches are URL fragments or example resource identifiers that happen to be long, contain only `[A-Za-z0-9/]`, and lack obvious word boundaries that would tip a heuristic off. They appear inside `<a href="...">` attributes, code samples, and prose like "see the example at github.com/opentofu/opentofu/...".
+- **Why FP**: The base64 detector is keying on charset + length without considering structure. URL paths, file paths, and KMS/AWS-style resource ARNs are visually similar to base64 but are not encoded payloads — they are addressing strings, often present in the rendered DOM via `href` attributes. A reviewer reading the page sees clickable links, not encoded bytes.
+- **Suggested adjustment**:
+  1. Skip matches whose surrounding text contains `/` density > 1/8 chars — paths and URLs almost always exceed this; real base64 almost never does.
+  2. Or: when the match begins/ends inside an HTML attribute value (`href=`, `src=`, `data-*`), suppress.
+  3. Or: when the match contains substrings that are common path components (`/tree/`, `/blob/`, `/docs/`, `keyRings/`, `cryptoKeys/`, `arn:`, `projects/`, `locations/`), classify as a path identifier and skip.
+- **Reporter / project**: `infra/gitea` — same fetch as above.
+
+### Cross-cutting note (technical docs sites)
+
+Docusaurus / Hugo / MkDocs documentation sites for security-adjacent topics (encryption, IAM, KMS) reliably trip both the ZWS rule (framework-injected layout) and the base64 rule (URL paths to source repos and resource-identifier examples). For an agent doing infrastructure research — exactly the audience most likely to be reading such docs — the current rules force a near-mandatory bypass. Worth a benchmark fixture: "vendor SSG-rendered HTML for an IaC topic page."

@@ -280,7 +280,7 @@ Required fields per rule:
 - `ordered` — the first ref's match must precede the second by byte offset. Use for attack chains where order matters (probe → extract).
 - `proximate` — both matches present within `proximity_bytes` of each other (any order).
 - `combined` — both matches present in the same scan, position-agnostic.
-- `cross_engine` — matches sourced from two distinct engines. Useful for "two engines independently flagged the same threat class" patterns. **Currently dormant**: the single-engine `Shield` puts everything in one bucket, so `cross_engine` rules ship as forward-compat for future multi-engine orchestration. They evaluate correctly when that lands.
+- `cross_engine` — matches sourced from two distinct engines. Useful for "two engines independently flagged the same threat class" patterns. In single-scan mode this is dormant against the current single-engine `Shield`. **In scan-group mode** (`lcs scan-group` / `Shield::scan_group`), each input becomes a synthetic engine bucket labelled `input:<label>`, and `cross_engine` rules fire when distinct inputs corroborate the same threat class. See [`scan-group-data-flow-simple.md`](scan-group-data-flow-simple.md) for the full mechanism.
 
 ### Category names
 

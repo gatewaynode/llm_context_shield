@@ -240,11 +240,19 @@ Phase 13 is intentionally smaller than the original Phase 12 — it reuses the e
 - [x] Integration tests (6 passing): clean batch, mixed batch with per-input distinction, cross-input MEC fires once, max-inputs guardrail rejects oversized batch, quiet mode exit codes, JSON top-level shape validation.
 - [x] Helpers: `render_scan_report_json(report, min_severity, include_fingerprint)`, `render_group_json(group, min_severity)`, `output_group_text(group, scores, correlations, fingerprint)` in `src/report.rs`. Single-scan `output()` routed through the shared per-scan helper.
 
-### 13c — Library docs and example
+### 13c — Library docs and example ✅ Complete (2026-05-02)
 
-- [ ] New `examples/batch_scan.rs` showing `ScanGroup` construction from a directory of files, `Shield::scan_group` invocation, and printing the `GroupReport`.
-- [ ] Extend `docs/rule-authoring.md` with a short note that the existing `CrossEngine` correlation type doubles as cross-input correlation in scan-group mode.
-- [ ] Update README "Library Usage" section with a 5-line `Shield::scan_group` snippet.
+- [x] New `examples/batch_scan.rs` showing `ScanGroup` construction from a directory of files, `Shield::scan_group` invocation, and printing the `GroupReport`.
+- [x] Extend `docs/rule-authoring.md` with a short note that the existing `CrossEngine` correlation type doubles as cross-input correlation in scan-group mode.
+- [x] Update README "Library Usage" section with a 5-line `Shield::scan_group` snippet.
+
+**Shipped 2026-05-02:**
+- `examples/batch_scan.rs` (~70 lines) — accepts a path arg; file → group of 1; directory → non-recursive read with dotfile + null-byte-binary skip; empty after filtering → exit 2 with clear error. Binary detection is a null-byte sniff in the first 8 KiB with a stub comment marking the future binary-analysis hook (per user direction).
+- `docs/rule-authoring.md:283` — corrected the now-obsolete "Currently dormant" sentence on `cross_engine` to describe scan-group activation, with a cross-link to `docs/scan-group-data-flow-simple.md`.
+- `README.md` — appended a 13-line `Shield::scan_group` snippet after the existing scan example, with a pointer to `examples/batch_scan.rs`.
+- `PRD.md` §4.3 — Scan groups row flipped from 📅 Roadmap to ✅ Shipped; description folds in the `engine: "input:<label>"` provenance note.
+- `Cargo.toml` — version 0.5.3 → 0.5.4. Local binary refreshed via `cargo install --path .` (the `~/.local/bin/lcs` distribution build is managed by the user separately and is out of scope for `cargo install`).
+- Verification: 384/384 tests pass, clippy clean, sentrux quality_signal 6615 (no drift from 13b baseline — examples are excluded from the module graph). Manual smoke against `/tmp/lcs_batch/` confirmed the mixed-dir, single-file, and nonexistent-path code paths.
 
 **Non-goals for Phase 13**: no persistence (a group is a one-shot in-memory aggregation), no cross-process state (use Phase 12 sessions for that), no temporal rules (the order of inputs in a group is meaningless), no `Shield::builder().scan_groups_enabled` flag (the feature is always available; the cost is paid only when `scan_group` is called).
 
