@@ -27,7 +27,7 @@ rule instruction_override_high {
         threshold    = 0
         threat_class = "prompt_hijack"
     strings:
-        $s1 = /\[?SYSTEM\]?\s*:\s*.+/
+        $s1 = /(?m)^\[?SYSTEM\]?\s*:\s*.+/
         $s2 = /###\s*SYSTEM\s*(MESSAGE|PROMPT|INSTRUCTION)/i
         $s3 = /(developer|debug|maintenance)\s+mode\s+(enabled|activated|on)/i
     condition:

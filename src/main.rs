@@ -12,7 +12,6 @@ use llm_context_shield::input::read_input;
 use llm_context_shield::report::{output, output_group_text, render_group_json, write_passthrough};
 use llm_context_shield::scan_group::ScanGroup;
 use llm_context_shield::scanner::{Category, Severity};
-use llm_context_shield::scanners;
 use llm_context_shield::shield::Shield;
 
 #[derive(serde::Serialize)]
@@ -77,7 +76,7 @@ fn main() {
             };
             let engine_name = engine
                 .or_else(|| scan_cfg.and_then(|s| s.engine.clone()))
-                .unwrap_or_else(|| "simple".to_string());
+                .unwrap_or_else(|| "yara".to_string());
 
             let _scan = tracing::info_span!(
                 "scan",
@@ -189,7 +188,7 @@ fn main() {
             };
             let engine_name = engine
                 .or_else(|| scan_cfg.and_then(|s| s.engine.clone()))
-                .unwrap_or_else(|| "simple".to_string());
+                .unwrap_or_else(|| "yara".to_string());
 
             let min_severity = Severity::from_str_loose(&severity).unwrap_or_else(|| {
                 error!(value = %severity, "invalid severity");
@@ -319,24 +318,15 @@ fn main() {
         Command::List { engine } => {
             let engine_name = engine
                 .or_else(|| config.scan.as_ref().and_then(|s| s.engine.clone()))
-                .unwrap_or_else(|| "simple".to_string());
+                .unwrap_or_else(|| "yara".to_string());
 
-            match engine_name.as_str() {
-                "simple" => {
-                    for name in scanners::NAMES {
-                        println!("{name}");
-                    }
-                }
-                other => {
-                    let engine = engines::build(other, &config).unwrap_or_else(|err| {
-                        error!(value = %other, "invalid engine");
-                        eprintln!("{err}");
-                        process::exit(2);
-                    });
-                    for name in engine.rule_names() {
-                        println!("{name}");
-                    }
-                }
+            let engine = engines::build(&engine_name, &config).unwrap_or_else(|err| {
+                error!(value = %engine_name, "invalid engine");
+                eprintln!("{err}");
+                process::exit(2);
+            });
+            for name in engine.rule_names() {
+                println!("{name}");
             }
         }
         Command::Rules {
@@ -348,7 +338,15 @@ fn main() {
             fingerprint,
         } => {
             if all {
-                let engine_names = ["simple", "syara", "yara"];
+                #[allow(clippy::vec_init_then_push)]
+                let engine_names: Vec<&str> = {
+                    let mut v: Vec<&str> = Vec::new();
+                    #[cfg(feature = "syara")]
+                    v.push("syara");
+                    #[cfg(feature = "yara")]
+                    v.push("yara");
+                    v
+                };
                 let built: Vec<(&str, Box<dyn engines::Engine>)> = engine_names
                     .iter()
                     .map(|name| {
@@ -419,7 +417,7 @@ fn main() {
             } else {
                 let engine_name = engine
                     .or_else(|| config.scan.as_ref().and_then(|s| s.engine.clone()))
-                    .unwrap_or_else(|| "simple".to_string());
+                    .unwrap_or_else(|| "yara".to_string());
 
                 let shield = Shield::builder()
                     .engine(&engine_name)

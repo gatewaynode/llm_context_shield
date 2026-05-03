@@ -7,6 +7,7 @@ use crate::correlation::MatchCorrelation;
 use crate::engines::RuleSetFingerprint;
 use crate::scoring::ThreatScoreboard;
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -235,44 +236,6 @@ impl ScanReport {
     /// Returns `true` when at least one correlation fired.
     pub fn has_correlations(&self) -> bool {
         !self.correlations.is_empty()
-    }
-}
-
-pub trait Scanner: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn scan(&self, input: &str) -> Vec<Finding>;
-
-    /// The single `Category` this scanner emits, when one applies.
-    ///
-    /// Default `None` so future scanners that don't have a single bound
-    /// category (e.g. multi-category heuristic scanners) need not override.
-    /// The 6 bundled regex-backed scanners override and return
-    /// `Some(self.inner.category)` so `SimpleEngine::rule_metadata` can
-    /// surface category provenance without downcasting `Box<dyn Scanner>`.
-    fn category(&self) -> Option<Category> {
-        None
-    }
-}
-
-/// Helper for scanners that are just a list of regex patterns.
-pub struct RegexScanner {
-    pub name: &'static str,
-    pub category: Category,
-    pub patterns: Vec<(regex::Regex, Severity, &'static str)>,
-}
-
-impl RegexScanner {
-    pub fn scan(&self, input: &str) -> Vec<Finding> {
-        let mut findings = Vec::new();
-        for (regex, severity, desc) in &self.patterns {
-            for m in regex.find_iter(input) {
-                findings.push(
-                    Finding::new(self.category, *severity, desc, m.as_str(), m.range())
-                        .with_rule_name(self.name),
-                );
-            }
-        }
-        findings
     }
 }
 

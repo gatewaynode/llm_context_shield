@@ -258,6 +258,32 @@ Phase 13 is intentionally smaller than the original Phase 12 — it reuses the e
 
 ---
 
+## Phase 13.5a — Drop the simple engine ✅ Complete (2026-05-03)
+
+Rationale: simple regex scanners were a leftover from the YARA-X bring-up and 100% covered by the current `.yar` rule set. Removing them shrinks the engine surface to the two engines we actually maintain (yara, syara), reduces module count, and removes the dual-disable-vocabulary bug (simple matched category names while YARA matched rule names). Drove a category-aware `--disable` extension on YaraEngine so the existing `--disable jailbreak`-style usage keeps working.
+
+**Locked decisions (planning Q&A this session):**
+- Q1 = B (pragmatic migration; gaps logged in `RULE_FIXES.md` later, not pre-cleared).
+- Q2 = α (inspection-only audit — no fixture-driven verification rung).
+- Q3 = iii (delete simple-internal tests; public-API failures get a new/widened YARA rule rather than test-loosening).
+- Q4 = a (`default = ["cli", "yara"]` — yara becomes the default).
+- Q5 = b (delete the whole `Scanner` trait + `RegexScanner` helper + `SimpleEngine` wrapper alongside the module).
+
+**Audit result:** 100% YARA coverage. All 6 simple scanners (`prompt_injection`, `instruction_override`, `jailbreak`, `delimiter_manipulation`, `data_exfiltration`, `hidden_content`) are mirrored byte-for-byte by the bundled `.yar` namesakes — no migration work, no `RULE_FIXES.md` entries needed for parity. Original tasks #225 (migrate gaps) and #226 (log RULE_FIXES) deleted as no-ops.
+
+**Shipped 2026-05-03:**
+- Deleted: `src/scanners/` (7 files), `src/engines/simple.rs`, `docs/migration-from-simple.md`, `Scanner` trait + `RegexScanner` helper from `src/scanner.rs`.
+- Default engine in `Shield::builder()`, CLI `Command::Scan`/`Command::ScanGroup`/`Command::List`/`Command::Rules`, `DEFAULT_CONFIG`, and CLI help text all changed `simple` → `yara`.
+- `Cargo.toml`: `default = ["cli", "yara"]`; version 0.5.4 → 0.5.5 (interim — 0.6.0 reserved for 13.5b's asymmetric rescale).
+- `YaraEngine::run_scored` `--disable` now matches by category name *or* rule identifier (case-insensitive), so existing `--disable jailbreak` invocations keep working. Disable check moved after `extract_meta` to access category. Unit test `disabled_filter_suppresses_by_category` added.
+- `rules/yara/instruction_override.yar` line 30: added `(?m)^` line-anchor to `$s1` so mid-sentence "SYSTEM:" no longer fires `instruction_override_high` (mirrors the previous simple-engine `(?im)^` behaviour).
+- `lcs rules --all` now feature-gates which engines it iterates over, so `--all` works with default features (yara only) instead of crashing on missing syara.
+- Test churn (`tests/integration.rs`): deleted `list_simple_engine_matches_default`, `rules_categories_simple_engine_has_six_lines`; updated `rules_default_lists_engine_prefixed_rules`, `scan_json_findings_carry_rule_name_and_engine`, `scan_text_emits_provenance_line`, `rules_all_default_json_has_fingerprint_and_engines` (now feature-gated per engine), `rules_all_with_engine_flag_exits_two`, `rules_all_categories_emits_cross_engine_union`.
+
+**Verification:** 265/265 tests pass (190 lib + 72 integration + 3 doctest). Drop from 384 reflects deleted simple-engine + scanners-module unit tests, not regressions. `cargo clippy --all-targets -- -D warnings` clean.
+
+---
+
 ## Phase 14: Confidence calibration and ensemble scoring
 
 Replace the current integer-accumulator threat scoring with calibrated probability estimates that combine evidence from string matches, semantic similarity, LLM verdicts, correlation findings, and session analysis into a unified confidence score. This is the orchestrator's job because it combines signals from multiple engines and analysis layers that no single engine can see.

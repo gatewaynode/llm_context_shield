@@ -617,15 +617,6 @@ fn list_default_prints_simple_scanner_names() {
 }
 
 #[test]
-fn list_simple_engine_matches_default() {
-    cmd()
-        .args(["list", "-e", "simple"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("prompt_injection"));
-}
-
-#[test]
 fn list_unknown_engine_exits_two() {
     cmd()
         .args(["list", "-e", "bogus"])
@@ -666,7 +657,9 @@ fn rules_default_lists_engine_prefixed_rules() {
         .args(["rules"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("simple:prompt_injection  [prompt_injection]"));
+        .stdout(predicate::str::contains(
+            "yara:prompt_injection_critical  [prompt_injection]",
+        ));
 }
 
 #[test]
@@ -677,22 +670,6 @@ fn rules_categories_emits_simple_set() {
         .success()
         .stdout(predicate::str::contains("prompt_injection"))
         .stdout(predicate::str::contains("jailbreak"));
-}
-
-#[test]
-fn rules_categories_simple_engine_has_six_lines() {
-    let out = cmd()
-        .args(["rules", "--categories", "-e", "simple"])
-        .assert()
-        .success()
-        .get_output()
-        .clone();
-    let stdout = String::from_utf8(out.stdout).expect("stdout is utf8");
-    let n = stdout.lines().count();
-    assert_eq!(
-        n, 6,
-        "simple engine should expose exactly 6 categories, got {n}: {stdout:?}"
-    );
 }
 
 #[test]
@@ -831,7 +808,7 @@ fn scan_json_findings_carry_rule_name_and_engine() {
         .and_then(|s| s.as_str())
         .expect("engine key on finding");
     assert!(!rule_name.is_empty(), "rule_name must be populated");
-    assert_eq!(engine, "simple");
+    assert_eq!(engine, "yara");
 
     let rules_out = cmd()
         .args(["rules", "--json"])
@@ -865,7 +842,7 @@ fn scan_text_emits_provenance_line() {
         .clone();
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("(engine: simple)"),
+        stderr.contains("(engine: yara)"),
         "expected per-finding provenance line in stderr, got: {stderr}"
     );
 }
@@ -971,31 +948,30 @@ fn rules_all_default_json_has_fingerprint_and_engines() {
         .and_then(|e| e.as_object())
         .expect("engines object");
 
-    let simple_arr = engines
-        .get("simple")
-        .and_then(|s| s.as_array())
-        .expect("engines.simple array");
-    assert!(!simple_arr.is_empty(), "engines.simple must be non-empty");
-
-    for entry in simple_arr {
-        for key in ["engine", "name", "category", "version", "threat_level", "threshold"] {
-            assert!(
-                entry.get(key).is_some(),
-                "rule entry missing key '{key}': {entry}"
-            );
+    #[cfg(feature = "yara")]
+    {
+        let yara_arr = engines
+            .get("yara")
+            .and_then(|s| s.as_array())
+            .expect("engines.yara array");
+        assert!(!yara_arr.is_empty(), "engines.yara must be non-empty");
+        for entry in yara_arr {
+            for key in ["engine", "name", "category", "version", "threat_level", "threshold"] {
+                assert!(
+                    entry.get(key).is_some(),
+                    "rule entry missing key '{key}': {entry}"
+                );
+            }
         }
     }
 
-    // With cli,yara,syara features compiled in, all three engine keys present + non-empty.
-    #[cfg(all(feature = "yara", feature = "syara"))]
+    #[cfg(feature = "syara")]
     {
-        for name in ["yara", "syara"] {
-            let arr = engines
-                .get(name)
-                .and_then(|s| s.as_array())
-                .unwrap_or_else(|| panic!("engines.{name} array missing"));
-            assert!(!arr.is_empty(), "engines.{name} must be non-empty");
-        }
+        let arr = engines
+            .get("syara")
+            .and_then(|s| s.as_array())
+            .expect("engines.syara array");
+        assert!(!arr.is_empty(), "engines.syara must be non-empty");
     }
 }
 
@@ -1019,7 +995,7 @@ fn rules_all_engines_keys_are_alphabetical() {
 #[test]
 fn rules_all_with_engine_flag_exits_two() {
     let out = cmd()
-        .args(["rules", "--all", "-e", "simple"])
+        .args(["rules", "--all", "-e", "yara"])
         .assert()
         .code(2)
         .get_output()
@@ -1060,8 +1036,8 @@ fn rules_all_categories_emits_cross_engine_union() {
         .success()
         .get_output()
         .clone();
-    let simple_out = cmd()
-        .args(["rules", "--categories", "-e", "simple"])
+    let yara_out = cmd()
+        .args(["rules", "--categories", "-e", "yara"])
         .assert()
         .success()
         .get_output()
@@ -1072,17 +1048,17 @@ fn rules_all_categories_emits_cross_engine_union() {
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    let simple_cats: BTreeSet<String> = String::from_utf8_lossy(&simple_out.stdout)
+    let yara_cats: BTreeSet<String> = String::from_utf8_lossy(&yara_out.stdout)
         .lines()
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
         .collect();
 
     assert!(
-        simple_cats.is_subset(&all_cats),
-        "rules --all --categories must contain every category from rules --categories -e simple;\
+        yara_cats.is_subset(&all_cats),
+        "rules --all --categories must contain every category from rules --categories -e yara;\
          missing: {missing:?}",
-        missing = simple_cats.difference(&all_cats).collect::<Vec<_>>()
+        missing = yara_cats.difference(&all_cats).collect::<Vec<_>>()
     );
 }
 

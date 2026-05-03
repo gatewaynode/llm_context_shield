@@ -62,7 +62,7 @@ impl Shield {
     /// Create a new builder with sensible defaults.
     pub fn builder() -> ShieldBuilder {
         ShieldBuilder {
-            engine_name: "simple".into(),
+            engine_name: "yara".into(),
             min_severity: Severity::Low,
             disabled: Vec::new(),
             config: None,
@@ -125,7 +125,7 @@ pub struct ShieldBuilder {
 }
 
 impl ShieldBuilder {
-    /// Set the scan engine by name (`"simple"`, `"yara"`, `"syara"`).
+    /// Set the scan engine by name (`"yara"`, `"syara"`).
     pub fn engine(mut self, name: &str) -> Self {
         self.engine_name = name.into();
         self
@@ -180,10 +180,7 @@ impl ShieldBuilder {
             None => {
                 let e = engines::build(&self.engine_name, &cfg).map_err(ShieldError::Engine)?;
                 // "No rules loaded" = both the addressable rule list and the
-                // introspection metadata are empty. Either signal alone is
-                // ambiguous: simple-engine doesn't override `rule_names`, and
-                // yara/syara may temporarily report empty `rule_metadata` if
-                // introspection is still being wired up.
+                // introspection metadata are empty.
                 if e.rule_names().is_empty() && e.rule_metadata().is_empty() {
                     return Err(ShieldError::NoRulesLoaded {
                         engine: e.name().to_string(),

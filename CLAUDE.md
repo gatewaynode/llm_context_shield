@@ -54,6 +54,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - For complex problems, throw more compute at it via subagents
 - One tack per subagent for focused execution
 
+### Delegate work to the most economical sub-agent possible following this rubrik:
+
+- **Haiku**: Bulk mechanical tasks, no judgement needed
+- **Sonnet**: Scoped research, code exploration, synthesis
+- **Opus**: Only when real planning, deep research, hard bugs, or tradeoffs are involved
+
+### Sub-agents must follow these hard limits of spawning additional agents
+
+- **Haiku**: Never spawns further sub agents (if it needs to, the task was wrong-sized)
+- **Maximum Spawn Depth**: 2 (parent --> subagent --> sub-subagent -| )
+
 ### 3. Self-Improvement Loop
 - After ANY correction from the user: update `tasks/lessons.md` with the pattern
 - Write rules for yourself that prevent the same mistake

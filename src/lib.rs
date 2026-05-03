@@ -30,7 +30,6 @@ pub mod report;
 pub mod rules;
 pub mod scan_group;
 pub mod scanner;
-pub mod scanners;
 pub mod scoring;
 pub mod shield;
 

@@ -1,6 +1,6 @@
 [package]
 name = "llm_context_shield"
-version = "0.5.4"
+version = "0.5.5"
 edition = "2024"
 license = "MIT"
 description = "Rust library and CLI for scanning LLM context injection threats"
@@ -28,7 +28,7 @@ yara-x = { version = "1.14", optional = true }
 syara-x = { version = "0.3.1", optional = true }
 
 [features]
-default = ["cli"]
+default = ["cli", "yara"]
 cli = ["dep:clap", "dep:tracing-subscriber", "dep:tracing-appender"]
 yara = ["dep:yara-x"]
 syara = ["dep:syara-x"]

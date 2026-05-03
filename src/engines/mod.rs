@@ -7,7 +7,6 @@ use crate::scanner::{Category, Finding, Severity};
 use crate::scoring::ThreatScoreboard;
 
 pub mod fingerprint;
-pub mod simple;
 
 #[cfg(feature = "syara")]
 pub mod syara;
@@ -16,7 +15,6 @@ pub mod syara;
 pub mod yara;
 
 pub use fingerprint::{compute as compute_fingerprint, RuleSetFingerprint};
-pub use simple::SimpleEngine;
 
 #[cfg(feature = "syara")]
 pub use syara::SyaraEngine;
@@ -31,13 +29,11 @@ pub use yara::YaraEngine;
 /// (the `lcs rules` CLI surface, the rule-set fingerprint, programmatic
 /// harnesses) can describe the loaded rule set without running a scan.
 ///
-/// `severity: None` means the rule does not declare a single bound severity —
-/// e.g. `SimpleEngine` regex scanners assign per-pattern severity at match
-/// time, so the rule itself doesn't carry one. YARA / SYARA rules with a
-/// `severity = "..."` meta field always emit `Some(_)`.
+/// `severity: None` means the rule does not declare a single bound severity.
+/// YARA / SYARA rules with a `severity = "..."` meta field always emit
+/// `Some(_)`; rules that omit the field surface as `None`.
 ///
-/// `version: None` means the rule does not declare a `version` meta field;
-/// SimpleEngine emits `None` (rules are compiled in, version is meaningless).
+/// `version: None` means the rule does not declare a `version` meta field.
 /// `threat_level` and `threshold` are non-Optional and mirror the scan-time
 /// effective defaults (`1` and `0`) when the rule does not declare them, so
 /// introspection matches what the scoring path actually uses.
@@ -64,8 +60,7 @@ pub trait Engine: Send + Sync {
 
     /// Names of every rule loaded by this engine, in compilation order.
     ///
-    /// The default is empty — engines that have no addressable rule concept
-    /// (e.g. `simple`, whose scanners are enumerated by `scanners::NAMES`)
+    /// The default is empty — engines without an addressable rule concept
     /// do not need to override. Used by `lcs list -e <engine>`.
     fn rule_names(&self) -> Vec<String> {
         Vec::new()
@@ -119,8 +114,6 @@ pub trait Engine: Send + Sync {
 /// `ShieldBuilder` (currently none in-tree; insurance for library consumers).
 pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<Box<dyn Engine>, String> {
     let engine: Box<dyn Engine> = match name {
-        "simple" => Box::new(SimpleEngine::new(config)),
-
         #[cfg(feature = "yara")]
         "yara" => YaraEngine::new(config).map(|e| Box::new(e) as Box<dyn Engine>)?,
 
@@ -137,7 +130,7 @@ pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<B
                          Rebuild with: cargo build --features syara"
             .into()),
 
-        other => return Err(format!("Unknown engine: {other}. Use: simple, yara, syara")),
+        other => return Err(format!("Unknown engine: {other}. Use: yara, syara")),
     };
 
     if engine.rule_names().is_empty() && engine.rule_metadata().is_empty() {
@@ -153,12 +146,6 @@ pub fn build(name: &str, #[allow(unused_variables)] config: &Config) -> Result<B
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn build_simple_engine() {
-        let cfg = Config::default();
-        assert_eq!(build("simple", &cfg).ok().unwrap().name(), "simple");
-    }
 
     #[cfg(feature = "yara")]
     #[test]
@@ -206,6 +193,6 @@ mod tests {
             Err(e) => e,
         };
         assert!(err.contains("bogus"));
-        assert!(err.contains("simple"));
+        assert!(err.contains("yara"));
     }
 }

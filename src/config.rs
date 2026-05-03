@@ -126,7 +126,7 @@ pub struct ScanConfig {
     pub severity: Option<String>,
     /// Scanners or rules to disable (list of names).
     pub disable: Option<Vec<String>>,
-    /// Scan engine to use: simple, yara, syara.
+    /// Scan engine to use: yara, syara.
     pub engine: Option<String>,
 }
 
@@ -206,8 +206,8 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 # Disable specific scanners by name
 # disable = []
 
-# Scan engine: simple (regex), yara, syara
-# engine = "simple"
+# Scan engine: yara, syara
+# engine = "yara"
 
 [rules]
 # Override the default rules directory.

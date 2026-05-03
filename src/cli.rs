@@ -36,7 +36,7 @@ pub enum Command {
         #[arg(long, value_delimiter = ',')]
         disable: Vec<String>,
 
-        /// Scan engine: simple, yara, syara  [default: simple]
+        /// Scan engine: yara, syara  [default: yara]
         #[arg(short = 'e', long)]
         engine: Option<String>,
 
@@ -85,7 +85,7 @@ pub enum Command {
         #[arg(long, value_delimiter = ',')]
         disable: Vec<String>,
 
-        /// Scan engine: simple, yara, syara  [default: simple]
+        /// Scan engine: yara, syara  [default: yara]
         #[arg(short = 'e', long)]
         engine: Option<String>,
 
@@ -119,11 +119,11 @@ pub enum Command {
 
     /// List available scanner or rule names (for use with --disable)
     ///
-    /// With no engine flag, lists the built-in `simple` scanner names.
-    /// With `-e yara` or `-e syara`, lists rule names compiled into the
-    /// corresponding engine (bundled + discovered).
+    /// With no engine flag, lists rules from the default engine (yara).
+    /// With `-e syara`, lists rule names compiled into the syara engine
+    /// (bundled + discovered).
     List {
-        /// Engine whose rule names should be listed: simple, yara, syara
+        /// Engine whose rule names should be listed: yara, syara
         #[arg(short = 'e', long)]
         engine: Option<String>,
     },
@@ -137,11 +137,11 @@ pub enum Command {
     /// mutually exclusive; default is the human-readable rule list.
     ///
     /// `--all` switches to a cross-engine view that builds every built-in
-    /// engine (simple, syara, yara) from the same Config and emits the union.
+    /// engine (yara, syara) from the same Config and emits the union.
     /// Combines with `--fingerprint`, `--categories`, and `--threat-classes`
     /// to switch the cross-engine output shape.
     Rules {
-        /// Engine to inspect: simple, yara, syara
+        /// Engine to inspect: yara, syara
         #[arg(short = 'e', long)]
         engine: Option<String>,
 
