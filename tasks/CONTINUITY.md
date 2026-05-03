@@ -4,181 +4,159 @@ Session-state notes. Rewritten at session end so the next session can pick up wi
 
 ---
 
-## State as of 2026-05-02 (compact-prep, end of Phase 13b session)
+## State as of 2026-05-03 (compact-prep, end of Phase 13c + Phase 13.5 framing session)
 
-**Branch:** `main`. Phase 13b shipped (CLI surface for `scan-group`); also added two dataflow docs and a new feedback memory. Working tree has uncommitted changes — **user will commit after the compact**.
+**Branch:** `main`. Phases 13b and 13c are committed. Today's session also worked through `tasks/TUNING.md` (FP reports from a sister project using `safe-fetch`) and produced `tasks/rule_widening_discussion.md` — an itemized discussion doc that locks the decisions for **Phase 13.5** (drop `simple` engine + asymmetric rescale + new rule metadata).
 
-**Test count:** 384/384 (was 378 pre-13b). Clippy clean with `--features cli,yara,syara`.
-**Cargo version:** still 0.5.3. Installed binary still predates current head. Optional bump.
+**Test count:** 384/384 unchanged from 13b. Clippy clean. Sentrux quality_signal **6615** (no drift across 13b/13c — examples are excluded from the module graph as expected).
+
+**Cargo version:** 0.5.4 (bumped at end of 13c). Local `~/.cargo/bin/lcs` refreshed via `cargo install --path .`. NB: `~/.local/bin/lcs` precedes on `PATH` and is a separate user-managed release build at older version — out of scope for `cargo install`.
+
+**Working tree:** only `tasks/rule_widening_discussion.md` is untracked (will be committed after compact). Everything else from 13c (Cargo bump, examples/batch_scan.rs, README, PRD, docs, todo.md) is in commit `bc82b44`.
 
 **Phase status (lcs):**
-- Phases 1–11, 11.5a–d, 11.6a–c — **complete**.
-- Phase 12 — **transferred to aegis** at `../aegis/` on 2026-04-30.
-- Phase 13a (Scan-group types + `Shield::scan_group`) — **complete 2026-05-01**.
-- Phase 13b (CLI surface) — **complete 2026-05-02**.
-- Phase 13c (docs + example) — **next workstream** (or skip to Phase 14 if user prefers).
-- Phase 14a–d (single-scan ensemble) — after 13.
-
-**Sentrux:** quality_signal 6615 (was 6626 before 13b). Drift −11. Modularity 4077 (was 4115, raw 0.111). Equality 5789 (was 5861, raw 0.421). Well within the ~6300 watch threshold.
-
----
-
-## Phase 13b — what shipped
-
-**`src/cli.rs`:** new `Command::ScanGroup` variant. Positional `files: Vec<PathBuf>` (`required=true, num_args=1..`), plus `format`/`severity`/`disable`/`engine`/`threat_scores`/`correlations`/`show_fingerprint` carried over from `Scan`, plus `--max-inputs <N>` (default 1000). Excludes `safe_only_passthrough`/`output` (D9 — multi-input passthrough has no coherent semantics).
-
-**`src/main.rs`:** new handler arm at line 167. Mirrors `Command::Scan`'s config-merge + severity/format validation, then enforces `--max-inputs` *before* any I/O (D8: shell-glob fail-fast), opens a `tracing::info_span!("scan_group", ...)`, builds the Shield, constructs the `ScanGroup` (rebinding in the loop because `add_file` consumes self), calls `shield.scan_group()`, dispatches by format. Exit 0 if all clean and no cross-input correlations; 1 if any findings or any cross-input fire; 2 on error.
-
-**`src/report.rs`:** three new helpers.
-- `render_scan_report_json(report, min_severity, include_fingerprint)` — extracted from `output()`. Existing single-scan JSON path now routes through this. Two consumers now (D4).
-- `render_group_json(group, min_severity)` — top-level group JSON document. Lifts fingerprint to top level (all per-input share it), embeds each per-input `ScanReport` via `render_scan_report_json(... false)`.
-- `output_group_text(group, scores, correlations, fingerprint)` — text emission. Per-input headers + correlations to stderr, aggregate scoreboard to stderr (under `--threat-scores`), cross-input correlation detail to stderr (under `--correlations`), summary line to stdout. Mirrors single-scan stderr-details / stdout-summary split.
-
-**`tests/integration.rs`:** `TempFiles` RAII fixture (Drop-based cleanup, per-test pid+name+index isolation) + six new tests. All passing:
-- `scan_group_clean_batch_exits_zero`
-- `scan_group_mixed_batch_exits_one_per_input_distinguishes`
-- `scan_group_cross_input_multi_engine_corroboration_fires_once` (validates bug #4 at CLI level)
-- `scan_group_max_inputs_rejects_oversized_batch`
-- `scan_group_quiet_mode_clean_exits_zero`
-- `scan_group_json_top_level_shape`
-
-**`tasks/todo.md`:** Phase 13a and 13b checkboxes flipped to `[x]` with completion-date headers and detailed bullet summaries of what shipped vs. what was deferred (`[scan_group]` config section deferred per D2; `enable_cross_input_correlation` not added because `correlation.enabled = false` already covers it).
-
-Decisions enacted (recorded for 13c context):
-- **D1.** New subcommand `Command::ScanGroup`, not a `--group` flag on `Scan`. User: "I prefer extra subcommand over excessive options."
-- **D2.** `--max-inputs <N>` is a CLI flag, default 1000. No `[scan_group]` config section. Per `feedback_simpler_path.md`.
-- **D3.** Synthetic engine label `"input:<label>"` (enacted in 13a) bleeds into JSON output. User signed off in 13a.
-- **D4.** `render_scan_report_json` extracted because two consumers exist (single-scan + scan-group). Drift risk would be real otherwise.
-- **D5.** Scan-group handler stays inline in main.rs (~110 lines added, total main.rs ~460, under 500 threshold). Defer extraction speculation per `feedback_simpler_path.md`.
-- **D6.** Raw path-as-label. `add_file` uses `path.to_string_lossy()`; CLI passes `PathBuf` through unchanged.
-- **D7.** No stdin sentinel (`lcs scan-group -` not supported). Required positional with `num_args=1..` rejects empty invocation.
-- **D8.** `--max-inputs` enforced before any I/O.
-- **D9.** No passthrough mode for scan-group.
-- **D10.** Tracing parity with single-scan (`scan_group` span shape mirrors `scan`).
+- Phases 1–11, 11.5a–d, 11.6a–c — complete.
+- Phase 12 — transferred to aegis 2026-04-30.
+- Phase 13a — complete 2026-05-01 (`Shield::scan_group` library API).
+- Phase 13b — complete 2026-05-02 (`lcs scan-group` CLI surface; commit 697f75a).
+- Phase 13c — complete 2026-05-02 (library docs + example; commit bc82b44).
+- **Phase 13.5 — newly framed today, awaiting plan-mode entry.** Three-step phase: drop `simple` engine → rescale + new metadata → tune per TUNING.md.
+- Phase 14a–d — single-scan ensemble / `ConfidenceScore`. After 13.5.
 
 ---
 
-## Also this session: dataflow docs + new feedback memory
+## Phase 13c — what shipped today (post-compact-1)
 
-**`docs/scan-data-flow-simple.md`** (NEW, 141 lines). Renamed from `scan-data-flow.md`. Single-scan walkthrough for `lcs scan -p`: mermaid `flowchart TD` at top with file:line refs in node labels, numbered steps with letter sub-points, exit-code table, variations table, "Key invariants" section (normalize is the only mutation, severity filter runs twice by design, the `-p` two-stream contract).
+Commit `bc82b44` ("feat: wrap up scan groups and document"):
 
-**`docs/scan-group-data-flow-simple.md`** (NEW, 265 lines). Companion walkthrough for `lcs scan-group A.txt B.txt -f json`. Cross-references `scan-data-flow-simple.md` at unchanged steps; focuses on what scan-group *adds*: the per-input loop, the aggregate-scoreboard-with-weight-inheritance pattern (clone first non-empty + merge rest, no double-weighting), the cross-input pass with synthetic `"input:<label>"` engine bucketing, the lex-tie-break worst-offender, the bug #4 canonicalization invariant, the no-passthrough decision.
+- **`examples/batch_scan.rs`** (NEW, ~80 lines after clippy fix). Path arg, file-or-dir, dotfile filter, null-byte binary skip with `// TODO(future): real binary analysis hook` stub, exit 2 on empty. User-directed shape: file → group of 1; dir → non-recursive `read_dir`; binary detected via null-byte sniff in first 8 KiB.
+- **`docs/rule-authoring.md:283`** — corrected the "Currently dormant" sentence on `cross_engine` (now stale after 13a/b). Replacement notes scan-group activation with synthetic `input:<label>` engine bucketing; cross-links to `docs/scan-group-data-flow-simple.md`.
+- **`README.md`** — appended a 13-line `Shield::scan_group` snippet after the existing scan example, with pointer to `examples/batch_scan.rs`.
+- **`PRD.md` §4.3** — Scan groups row flipped 📅 Roadmap → ✅ Shipped; description folds in the `engine: "input:<label>"` provenance note.
+- **`Cargo.toml`** — version 0.5.3 → 0.5.4.
+- **`tasks/todo.md`** — 13c checkboxes flipped, completion bullet appended.
 
-**`~/.claude/projects/-Users-john-code-llm-context-shield/memory/feedback_dataflow_docs.md`** (NEW). Captures the format as a feedback memory so future sessions default to writing `docs/<feature>-data-flow.md` for any "walk me through X" request rather than answering chat-only. Format spec:
-1. Mermaid `flowchart TD` at top with file:line refs in node labels.
-2. Numbered walkthrough; sub-points use **A.**, **B.**, **C.** letters; each sub-point cites file:line.
-3. Tables for exit codes + variations.
-4. "Key invariants" section at the end with gotchas.
-5. For features built on top of others, cross-reference rather than duplicate.
+Verification on 13c: 384/384 tests, clippy clean (after one `is_some_and` fix in batch_scan.rs), sentrux qs 6615 unchanged. Manual smokes confirmed: mixed dir → cross-input correlation fires once + worst-offender named; single file → group-of-1; nonexistent path → clean error message.
 
-`MEMORY.md` index line added. Note: this memory is project-scoped (lcs only). If the same default is wanted in aegis or elsewhere, copy the file into that project's memory dir when working there.
+---
+
+## Phase 13.5 — framing decided today (in `rule_widening_discussion.md` §8)
+
+User-driven discussion off `tasks/TUNING.md` (4 FP reports from sister project using `safe-fetch` skill: GitHub Releases API JSON tripping `data_exfiltration` on PR titles, hex digests tripping `hidden_content`, ZWS in Docusaurus HTML tripping `hidden_content` HIGH 25+/page, URL paths tripping base64 detector). Resulted in the locked decisions below.
+
+### Decisions (D1–D9 from rule_widening_discussion.md §8)
+
+- **D1. Drop the `simple` engine.** Hand-coded regex+Rust scanners introduce a class of bug (logic errors in glue code) that interpreted/compiled rules with strong validation avoid. All future tuning happens at the rule-file layer.
+- **D2. Asymmetric multiplicative rescale.**
+  - `threat_level` × **20** (1–5 → 20–100)
+  - `composite_threat_level` × **40** (6–8 → 240–320)
+  - Gating thresholds (`ThreatMeta.threshold`) × **60** (0/5/10 → 0/300/600)
+  - `escalation_threshold` × **60** (default 100 → 6000)
+  - `escalation_reduction` × **60** (0 → 0)
+  - Severity buckets stay manual.
+  - **Implication accepted:** composites become more dominant (ratio composite-max / single-max grows from ~1.6× to ~3.2×). Gating becomes harder to unlock (threshold-300 needs 15× threshold-0 hits at level 20).
+- **D3. Add new rule-metadata fields alongside the rescale** (single commit, tag 0.6.0):
+  - `context_taxonomy: Vec<String>` — placeholder for option C from the discussion. Populated as contexts get identified (`"html:body"`, `"json:value"`, etc.). No runtime behavior in 13.5b; hook for later.
+  - `provenance: String` — optional. Ties a rule to the fixture/FP that motivated its current tuning. Tuning archaeology aid.
+- **D4. Severity stays per-rule manual baseline.** Hybrid model is what we already have (we set baselines; downstream consumers override via `--disable` and future confidence overrides). Confirmed not a change request.
+- **D5. Two-axis severity × confidence** (option B from discussion) — defer to Phase 14.
+- **D6. f32 probability scale** (option D from discussion) — defer to Phase 14.
+- **D7. New `tasks/RULE_FIXES.md`** log for applied fixes — separate from `TUNING.md` (FP reports stay there; fixes accumulate in RULE_FIXES for future pattern-mining).
+- **D8. Single commit per phase**, tagged at meaningful boundaries. Rescale + metadata commit tagged **0.6.0**.
+- **D9. Future-scope flagged but out of 13.5:** custom engine direction (Leibniz / *characteristica universalis*; divergence from pure Boolean rule logic — user has poetry to seed this when we get to it), and persisted FP suppression / per-deployment override files (dynamic tuning).
+
+### Order of operations (Phase 13.5)
+
+- **13.5a — Drop the `simple` engine.** Migrate viable simple rules to YARA. Document gaps (rules without clean YARA equivalent — accept loss or note as RULE_FIXES). Remove `src/scanners/` simple-engine code + registry hooks. **Bigger task than the rescale itself.** Plan-mode entry should resolve the open question: aggressive (every simple rule needs YARA equivalent before removal) vs. pragmatic (migrate what migrates cleanly; gaps logged as RULE_FIXES). User's "tuning at the rule-file layer" preference leans pragmatic.
+- **13.5b — Rescale + new metadata.** Mechanical multiplicative pass over `.yar` / `.syara` / `correlation/bundled.rs`. Add `context_taxonomy` and `provenance` fields to the rule metadata schema. Update `docs/rule-authoring.md` composite-must-exceed-individual guidance with new bounds. Tag **0.6.0**.
+- **13.5c — Begin tuning.** Spin up `tasks/RULE_FIXES.md`. Walk `TUNING.md` entry by entry; for each, propose a rule fix using the wider scale and (where ready) a `context_taxonomy` annotation. Tag 0.6.x increments per fix batch.
 
 ---
 
 ## Working tree at session end
 
-Uncommitted changes (user will commit after compact):
-
+Untracked:
 ```
- M src/cli.rs
- M src/main.rs
- M src/report.rs
- M tasks/todo.md
- M tests/integration.rs
-?? docs/scan-data-flow-simple.md
-?? docs/scan-group-data-flow-simple.md
-?? tasks/TUNING.md          ← NOT from this session; user-created earlier on 2026-05-02 (05:40)
+?? tasks/rule_widening_discussion.md
 ```
 
-`tasks/TUNING.md` is a real-world rule-tuning notebook the user created externally before this session started — leave it as untracked unless user pulls it into the commit explicitly.
+This is the only working-tree change beyond what's in `bc82b44`. CONTINUITY.md after this rewrite will appear as ` M tasks/CONTINUITY.md`.
 
-This `tasks/CONTINUITY.md` rewrite is the only change made *after* the working-tree snapshot was taken; will appear as ` M tasks/CONTINUITY.md` once written.
-
----
-
-## Next session: Phase 13c plan (preview)
-
-Spec at `tasks/todo.md:249-254`. Three deliverables:
-
-1. **`examples/batch_scan.rs`** — minimal end-to-end demo of `Shield::scan_group` from a directory of files, showing the `GroupReport` shape. Should compile under `cargo build --examples`. Reference the new `docs/scan-group-data-flow-simple.md` for the conceptual map.
-2. **`docs/rule-authoring.md`** — short note that the existing `CrossEngine` correlation type doubles as cross-input correlation in scan-group mode. Cross-link to `docs/scan-group-data-flow-simple.md` rather than re-explaining.
-3. **README "Library Usage"** — 5-line `Shield::scan_group` snippet alongside the existing `Shield::scan` example.
-
-Plus a few orphan items flagged for 13c-or-later:
-- **PRD §6.4** — note that cross-input correlation findings carry `engine: "input:<label>"` (D3).
-- **`docs/scan-data-flow.md` index** — consider a small `docs/README.md` or a section in the main README that lists the dataflow docs (will grow as more features get the treatment).
-- **Cargo bump 0.5.3 → 0.5.4** + `cargo install --path .` to refresh the binary.
-
-If user prefers to skip 13c and jump to Phase 14 (single-scan ensemble), 13c can defer indefinitely — the load-bearing surface (CLI + library API) is shipped.
-
----
-
-## Open work after Phase 13b
-
-| Track | Item | Priority |
-|---|---|---|
-| lcs roadmap | Phase 13c (examples/, docs polish, PRD §6.4 note) | After this compact |
-| lcs roadmap | Phase 14a–d (single-scan ensemble / ConfidenceScore) | After 13c (or skip 13c) |
-| lcs bug | #5 misleading fast-path comment | Low cosmetic |
-| lcs bug | #6 redundant severity filter | Low (acknowledged in `docs/scan-data-flow-simple.md` invariants section as "by design") |
-| lcs ops | Cargo 0.5.3 → 0.5.4 + reinstall | Trivial |
-| lcs hygiene | `tasks/TUNING.md` integration into rule-authoring workflow | User-driven |
-| lcs backlog | Sentrux modularity bottleneck deeper-dive | Hygiene |
-| lcs backlog | Cumulative-scoring inflation | Medium |
-| lcs backlog | Synonym-aware prescan, multilingual model swap, latency benchmark, threshold-tuning corpus, encrypted bundled rules | Research/hygiene |
-| aegis bootstrap | Read imports → draft `PRD.md` → draft `ARCHITECTURE.md` → re-scope phases | Phase 0 (when user pivots to aegis) |
+User will commit after compact.
 
 ---
 
 ## File map
 
-- `tasks/todo.md` — phase plan. Phases 13a/13b marked DONE; 13c spec at lines 249-254 is the read-target for next session.
-- `tasks/BUGS.md` — #1, #2, #3, #4 resolved. #5, #6 still open.
+- `tasks/todo.md` — phase plan. 13a/b/c marked complete. Phase 13.5 not yet recorded as a plan section in todo.md (will be added at 13.5a plan-mode entry; spec is in `rule_widening_discussion.md` §8).
+- `tasks/BUGS.md` — #1, #2, #3, #4 resolved. #5 (cosmetic), #6 (acknowledged-by-design in `scan-data-flow-simple.md`) still open.
 - `tasks/CONTINUITY.md` — this file.
+- `tasks/TUNING.md` — committed; user-maintained FP report log. 4 entries (2026-05-02): GitHub Releases API JSON × 2, OpenTofu HTML × 2.
+- `tasks/rule_widening_discussion.md` — NEW, untracked. Itemized discussion + locked decisions for Phase 13.5. §8 is the canonical decisions log.
+- `tasks/RULE_FIXES.md` — NOT YET CREATED. Will be created at start of 13.5c.
 - `tasks/04-25-2026__todo.md` — pre-truncation archive.
-- `tasks/SYARA-X-WISHLIST.md` — pre-existing, untouched.
-- `tasks/TUNING.md` — NEW (user-created externally on 2026-05-02). Real-world rule-tuning notebook.
-- `tasks/ARCHITECTURE.md`, `tasks/lessons.md` — unchanged this session.
-- `tasks/BACKLOG.md` — unchanged.
-- `~/.claude/plans/humble-dancing-falcon.md` — current 13b plan (just shipped). Overwrite when planning 13c.
-- `docs/scan-data-flow-simple.md` — NEW. Single-scan dataflow walkthrough.
-- `docs/scan-group-data-flow-simple.md` — NEW. Scan-group dataflow walkthrough.
-- `docs/rule-authoring.md` — needs 13c update (cross-input correlation note).
-- `docs/rule-introspection.md`, `docs/migration-from-simple.md`, `docs/semantic-rules.md` — untouched.
-- `PRD.md` — needs 13c update (§6.4 `engine: "input:<label>"` provenance).
-- `src/scan_group.rs` — unchanged this session (13a's API still complete).
-- `src/scoring.rs`, `src/shield.rs`, `src/correlation/*` — unchanged this session.
-- `src/cli.rs`, `src/main.rs`, `src/report.rs`, `tests/integration.rs` — modified by 13b.
-- `~/.claude/projects/-Users-john-code-llm-context-shield/memory/feedback_dataflow_docs.md` — NEW.
-- `~/.claude/projects/-Users-john-code-llm-context-shield/memory/MEMORY.md` — index line added.
-- `../aegis/` — sister project. Untouched this session.
+- `tasks/SYARA-X-WISHLIST.md`, `tasks/ARCHITECTURE.md`, `tasks/lessons.md`, `tasks/BACKLOG.md` — unchanged this session.
+- `~/.claude/plans/humble-dancing-falcon.md` — Phase 13c plan (just shipped). Overwrite at next plan-mode entry.
+- `docs/scan-data-flow-simple.md`, `docs/scan-group-data-flow-simple.md` — committed in 13c.
+- `docs/rule-authoring.md` — `cross_engine` paragraph corrected at line 283. Will need further updates in 13.5b (composite bounds with new scale, new metadata field docs).
+- `PRD.md` §4.3 — Scan groups row updated. No changes pending until 13.5b.
+- `examples/batch_scan.rs` — NEW in 13c.
+- `Cargo.toml` — at 0.5.4. Will bump to 0.6.0 at 13.5b commit.
+- `src/scoring.rs`, `src/scanner.rs` — unchanged. Will be touched in 13.5b for new metadata fields and (potentially) the rescale defaults.
+- `src/scanners/` (simple engine module tree) — to be **removed** in 13.5a.
+- `src/correlation/bundled.rs` — composite levels need ×40 in 13.5b.
+- All `.yar` / `.syara` rule files — `threat_level` ×20, `threshold` ×60 in 13.5b.
+- `~/.claude/projects/-Users-john-code-llm-context-shield/memory/` — no new memories this session.
+- `../aegis/` — sister project. Untouched this session. Phase 12 (sessions) lives there.
 
 ---
 
 ## Memory state
 
-- **NEW:** `feedback_dataflow_docs.md` — for "walk me through X" / dataflow / command-trace requests, default to writing `docs/<feature>-data-flow.md` with mermaid + numbered walkthrough + invariants. Project-scoped to lcs.
-- `feedback_simpler_path.md` — drove D2 (no `[scan_group]` config), D5 (no premature handler extraction).
-- `feedback_one_question_at_a_time.md` — drove Q4 surfacing as a discrete question before plan-mode entry.
-- `project_yarax.md`, `project_syara.md` — context for engine bucket labels in cross-input correlation tests.
-- `feedback_quote_seeding.md` — not triggered this session.
+No new or modified memories this session. Triggered:
+- `feedback_dataflow_docs.md` — would have triggered if user had asked for a dataflow walkthrough; they didn't this session.
+- `feedback_simpler_path.md` — drove the 13c "thin shape" decisions and the discussion-doc structure.
+- `feedback_one_question_at_a_time.md` — drove the Q1/Q2 framing in §5 of the discussion doc and the asymmetric-vs-flat ambiguity surface.
+- `feedback_quote_seeding.md` — user offered "more original poetry" to seed thinking on the engine-direction question; declined for the immediate rescale task, accepted in principle for the longer-arc custom-engine discussion.
 
 ---
 
 ## Sticky reminders for the next session
 
-- **User will commit the working tree first.** Don't pre-empt: the next session opens with a clean working tree assumed (or the user may have staged/split the commit). Read `git status` before assuming anything.
-- **Per `feedback_dataflow_docs.md`:** any "walk me through X" / dataflow request → write `docs/<feature>-data-flow.md` by default. Cross-reference simpler docs rather than duplicating content.
-- **Per CLAUDE.md:** plan-mode for 13c before any code (it's three deliverables — examples, docs, README — borderline trivial but worth a quick plan). Sentrux scan + health post-13c.
-- **Per `feedback_simpler_path.md`:** thin shape for 13c. The README "Library Usage" snippet is 5 lines, not a tutorial. The rule-authoring note is a paragraph + cross-link, not a section. The example should be one self-contained ~30-line `main()`, not a framework.
-- **Per `feedback_one_question_at_a_time.md`:** if 13c surfaces architectural choices (e.g., "should the example use the bundled rules or a custom config?"), surface them sequentially before the plan.
-- **Spec quirks unchanged from 13b:** `ScanReport` is intentionally not `Serialize`; build per-scan JSON via `render_scan_report_json`. `MatchCorrelation` is `Serialize`-derived. `ThreatScoreboard` is `Serialize`-derived.
-- **Bug #4 is fixed and validated end-to-end at the CLI level.** Phase 14 calibration concerns are resolved.
+- **User will commit `tasks/rule_widening_discussion.md` and updated `CONTINUITY.md` after compact.** Read `git status` first; don't assume anything about staging order.
+- **Phase 13.5a is the next plan-mode entry.** It's bigger than 13c — dropping a whole engine + migrating its rules. Per `feedback_simpler_path.md`, the pragmatic migration option (gaps logged, not blocking) is the lighter path; surface this as the first question at plan-mode entry.
+- **Asymmetric rescale numbers are LOCKED:**
+  - `threat_level` × 20, `composite_threat_level` × 40, gating × 60, `escalation_threshold` × 60, `escalation_reduction` × 60. Severity stays manual.
+- **Don't quietly switch to flat ×20 in 13.5b** — the user explicitly walked back the flat version after I surfaced the asymmetric/flat ambiguity. Composite dominance and harder gating are *intended* signals of the rescale.
+- **Tag 0.6.0 at the 13.5b commit** — that's the meaning-preserving-but-value-changing tag the user asked for.
+- **`tasks/RULE_FIXES.md` does not yet exist.** Create it at the start of 13.5c, not earlier.
+- **`tasks/TUNING.md` is user-maintained.** FP reports go in there; they may add more between sessions. Don't restructure it without asking.
+- **Per `feedback_quote_seeding.md`:** the user has poetry queued for seeding the custom-engine direction (Leibniz / *characteristica universalis*). Don't engage that direction until they offer the framing.
+- **`~/.local/bin/lcs` is older than `~/.cargo/bin/lcs`.** User maintains the `~/.local` build separately. Don't try to "fix" it.
 
 ---
 
-## Sentrux baseline
+## Sentrux baseline (carried from 13b)
 
-Last scan (2026-05-02, post-13b): `quality_signal = 6615`. Bottleneck: **modularity (4077)**, raw 0.111, with 26 cross-module edges (was 24 before 13b — the `report.rs ↔ scan_group.rs` import added in 13b accounts for the bump). Secondary: equality (5789, raw 0.421).
+`quality_signal = 6615`. Bottleneck: **modularity (4077, raw 0.111)**, 26 cross-module edges. Secondary: equality (5789, raw 0.421). 13.5a will *remove* a module (the simple engine), which should improve modularity — watch for qs uplift. 13.5b adds two metadata fields but no new modules; should be neutral.
 
-Drift since 13a baseline (qs 6626): −11. Within phase-completion noise. If 13c adds substantial cross-module wiring, watch for modularity drift below ~3800 or qs drift below ~6300.
+Watch threshold: re-plan if qs drifts below ~6300 or modularity raw drops below ~3800 during 13.5.
+
+---
+
+## Open work after Phase 13c
+
+| Track | Item | Priority |
+|---|---|---|
+| lcs roadmap | **Phase 13.5a — drop simple engine** | Next |
+| lcs roadmap | **Phase 13.5b — rescale + metadata fields, tag 0.6.0** | After 13.5a |
+| lcs roadmap | **Phase 13.5c — populate RULE_FIXES.md, tune per TUNING.md** | After 13.5b |
+| lcs roadmap | Phase 14a–d (single-scan ensemble / `ConfidenceScore`) | After 13.5 |
+| lcs hygiene | `tasks/TUNING.md` integration into rule-authoring workflow | Ongoing through 13.5c |
+| lcs bug | #5 cosmetic comment fix | Low |
+| lcs bug | #6 redundant severity filter (acknowledged by-design) | Low |
+| lcs ops | Sentrux modularity bottleneck deeper-dive | After 13.5 (modularity may shift) |
+| lcs research | Custom engine direction (Leibniz / *characteristica universalis*) | Future, user-seeded |
+| lcs research | Persisted FP suppression / dynamic tuning | After custom engine |
+| lcs hygiene | `~/.local/bin/lcs` user-managed; not lcs's problem | — |
+| aegis bootstrap | Read imports → draft PRD → draft ARCHITECTURE → re-scope phases | When user pivots |
