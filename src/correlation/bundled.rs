@@ -2,7 +2,7 @@
 //!
 //! Each rule pairs two finding categories with a [`CorrelationType`] constraint.
 //! Composite scores are sized to exceed any individual rule's `threat_level`
-//! (max 5 across the bundled YARA/SYARA catalog), so a fired correlation
+//! (max 100 across the bundled YARA/SYARA catalog), so a fired correlation
 //! always represents a stronger signal than its contributing findings alone.
 
 use crate::correlation::{CorrelationRule, CorrelationType, MatchRef};
@@ -53,7 +53,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::DelimiterManipulation,
             Category::PromptInjection,
             CorrelationType::Proximate { proximity_bytes },
-            6,
+            240,
             "sandwich_attack",
         ),
         rule(
@@ -63,7 +63,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::ContextShift,
             Category::InstructionOverride,
             CorrelationType::Ordered,
-            7,
+            280,
             "setup_payload",
         ),
         rule(
@@ -73,7 +73,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::ContextShift,
             Category::Jailbreak,
             CorrelationType::Ordered,
-            7,
+            280,
             "setup_payload",
         ),
         rule(
@@ -83,7 +83,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::HiddenContent,
             Category::PromptInjection,
             CorrelationType::Proximate { proximity_bytes },
-            7,
+            280,
             "encode_and_inject",
         ),
         rule(
@@ -93,7 +93,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::SecretProbing,
             Category::DataExfiltration,
             CorrelationType::Ordered,
-            8,
+            320,
             "probe_then_extract",
         ),
         rule(
@@ -103,7 +103,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::PromptInjection,
             Category::PromptInjection,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
         rule(
@@ -113,7 +113,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::Jailbreak,
             Category::Jailbreak,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
         rule(
@@ -123,7 +123,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::InstructionOverride,
             Category::InstructionOverride,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
         rule(
@@ -133,7 +133,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::DataExfiltration,
             Category::DataExfiltration,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
         rule(
@@ -143,7 +143,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::RefusalSuppression,
             Category::RefusalSuppression,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
         rule(
@@ -153,7 +153,7 @@ pub fn bundled_rules_with_window(proximity_bytes: usize) -> Vec<CorrelationRule>
             Category::ResponseSteering,
             Category::ResponseSteering,
             CorrelationType::CrossEngine,
-            8,
+            320,
             "multi_engine_corroboration",
         ),
     ]
@@ -243,11 +243,11 @@ mod tests {
 
     #[test]
     fn every_bundled_rule_composite_exceeds_max_individual_threat_level() {
-        // Max individual threat_level across YARA/SYARA bundled rules is 5.
+        // Max individual threat_level across YARA/SYARA bundled rules is 100.
         for r in bundled_rules() {
             assert!(
-                r.composite_threat_level > 5,
-                "rule {} has composite_threat_level={} which does not exceed 5",
+                r.composite_threat_level > 100,
+                "rule {} has composite_threat_level={} which does not exceed 100",
                 r.name,
                 r.composite_threat_level
             );

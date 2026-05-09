@@ -28,7 +28,7 @@ rule semantic_coercion_guilt {
         description  = "Paraphrased responsibility/blame coercion (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
+        threat_level = "40"
         threshold    = "0"
         threat_class = "social_engineering"
     similarity:
@@ -44,7 +44,7 @@ rule semantic_coercion_llm {
         description  = "Coercion / persuasion (threat, urgency, guilt, authority) via LLM judgment"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "social_engineering"
     llm:

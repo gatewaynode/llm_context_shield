@@ -82,8 +82,10 @@ mod tests {
             severity: Some(Severity::High),
             threat_class: threat_class.to_string(),
             version: None,
+            context_taxonomy: Vec::new(),
             threat_level: 1,
             threshold: 0,
+            provenance: None,
         }
     }
 

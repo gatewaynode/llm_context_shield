@@ -44,8 +44,10 @@ pub struct RuleMeta {
     pub severity: Option<Severity>,
     pub threat_class: String,
     pub version: Option<String>,
+    pub context_taxonomy: Vec<String>,
     pub threat_level: i32,
     pub threshold: i32,
+    pub provenance: Option<String>,
 }
 
 /// Common interface for all scan engines.

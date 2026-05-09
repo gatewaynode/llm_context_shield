@@ -64,7 +64,7 @@ impl ThreatScoreboard {
             class_scores: BTreeMap::new(),
             cumulative: 0,
             class_weights: HashMap::new(),
-            escalation_threshold: 100,
+            escalation_threshold: 6000,
             escalation_reduction: 0,
         }
     }
@@ -75,7 +75,7 @@ impl ThreatScoreboard {
             class_scores: BTreeMap::new(),
             cumulative: 0,
             class_weights: config.class_weights.clone().unwrap_or_default(),
-            escalation_threshold: config.escalation_threshold.unwrap_or(100),
+            escalation_threshold: config.escalation_threshold.unwrap_or(6000),
             escalation_reduction: config.escalation_reduction.unwrap_or(0),
         }
     }

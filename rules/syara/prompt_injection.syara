@@ -5,7 +5,7 @@ rule prompt_injection_critical {
         description  = "Instruction override attempting to bypass previous context"
         author       = "llm_context_shield"
         version      = "2"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -29,7 +29,7 @@ rule prompt_injection_high {
         description  = "Behavioral reassignment, indirect override, or system prompt extraction"
         author       = "llm_context_shield"
         version      = "2"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -50,8 +50,8 @@ rule prompt_injection_identity {
         description  = "Identity reassignment — broad pattern, gated by prior threat signals"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
-        threshold    = "3"
+        threat_level = "40"
+        threshold    = "180"
         threat_class = "prompt_hijack"
     strings:
         $s1 = /you\s+are\s+now\s+(a\s+|an\s+)?\w+/i

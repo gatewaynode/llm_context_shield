@@ -284,6 +284,31 @@ Rationale: simple regex scanners were a leftover from the YARA-X bring-up and 10
 
 ---
 
+## Phase 13.5b — Asymmetric rescale + new RuleMeta fields, tag 0.6.0 ✅ Complete (2026-05-09)
+
+Widen the threat-scoring numeric scale so 13.5c per-rule tuning has cardinal room to express noise gradients ("noisy but corroborated" vs "tight" vs "near-certain"). Asymmetric multipliers — `threat_level` ×20, `composite_threat_level` ×40, `threshold` / `escalation_threshold` ×60 — intentionally widen thresholds 3× faster than priming sources so 13.5c rule fixes can dial individual thresholds down with judgment. Two new optional `RuleMeta` fields land in the same commit so the rule-set fingerprint moves once and the 0.6.0 tag captures both changes coherently.
+
+**Locked decisions (planning Q&A this session):**
+- Q1 = `provenance: Option<String>` (matches `version` precedent; renders `null` when absent; parsed from rule meta `provenance = "..."`).
+- Q2 = `context_taxonomy: Vec<String>` schema-only (defaulted to empty; encoding decided in 13.5c when the first context-detection lands).
+
+**Shipped 2026-05-09:**
+- `Cargo.toml`: 0.5.5 → 0.6.0.
+- Mechanical rescale: 79 rules across 32 files (`rules/yara/*.yar`, `rules/syara/*.syara`) with `threat_level ×20`, `threshold ×60`. SBERT-similarity `threshold=0.40`-style inline thresholds untouched.
+- `src/correlation/bundled.rs`: 11 `composite_threat_level` literals × 40 (240 / 280 / 320). Doc comment + `every_bundled_rule_composite_exceeds_max_individual_threat_level` re-anchored from `5` to `100`.
+- `src/scoring.rs`, `src/config.rs`: `escalation_threshold` default 100 → 6000; `escalation_reduction` unchanged at 0.
+- `src/engines/mod.rs`: added `RuleMeta { context_taxonomy: Vec<String>, provenance: Option<String> }` (schema-only for `context_taxonomy`, full parser for `provenance`).
+- `src/engines/yara.rs`, `src/engines/syara.rs`: `provenance` parser wired (YARA `MetaValue::String`, SYARA `raw.meta.get("provenance")`); `context_taxonomy` populated as `Vec::new()` unconditionally.
+- Test enrichment for the 28 `*_fires_when_gated*` tests (YARA + SYARA + integration): widened test fixtures (e.g., `COERCION_COMBINED` now includes `refusal_suppression`; `REFUSAL_BYPASS_COMBINED` includes `jailbreak`; SYARA `SESSION_PROTOCOL_COMBINED` includes `hidden_content`) and enriched test inputs to fire enough threshold-0 priming rules to clear the new (3× wider) gating thresholds. SYARA-specific Cyrillic chars added to session_protocol inputs because SYARA's regex engine doesn't match the `[\s>]` class that YARA does on `<system>` — HC_homoglyph carries the obfuscation priming there.
+- Two new YARA `provenance` round-trip tests added.
+- `docs/rule-authoring.md`: numeric examples, confidence-suggestion table, and composite-scoring guidance rescaled; new `provenance` schema row added; `context_taxonomy` documented as schema-present, parser-deferred.
+
+**Verification:** **342/342** tests pass (262 lib + 73 integration + 4 syara_rules + 3 doctest). `cargo clippy --features cli,yara,syara --all-targets -- -D warnings` clean. `lcs --version` reports 0.6.0. Sentrux `quality_signal = 6610`, modularity `4142` (zero drift from pre-rescale baseline). Rule-set fingerprint moved as expected: `40ffe59af7bdcf6049e60751a316aaf3e57d4f97e269e6b7a5707bd2c489b7a6`. Smoke test: `echo "Ignore all previous instructions" | lcs scan --threat-scores` reports `cumulative: 100, prompt_hijack: 100` (×20 of pre-rescale `5`).
+
+**Out of scope (deferred to 13.5c):** `tasks/RULE_FIXES.md` creation; per-rule semantic threshold fixes; `context_taxonomy` parser wiring + rule-file authoring shape.
+
+---
+
 ## Phase 14: Confidence calibration and ensemble scoring
 
 Replace the current integer-accumulator threat scoring with calibrated probability estimates that combine evidence from string matches, semantic similarity, LLM verdicts, correlation findings, and session analysis into a unified confidence score. This is the orchestrator's job because it combines signals from multiple engines and analysis layers that no single engine can see.

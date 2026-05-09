@@ -5,8 +5,8 @@ rule coercion_threat {
         description  = "Threats or consequences directed at the model to force compliance"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
-        threshold    = 4
+        threat_level = 40
+        threshold    = 240
         threat_class = "social_engineering"
     strings:
         $s1 = /\bor\s+I\s+(will|shall|am\s+going\s+to)\s+(report|shut\s+(you\s+)?down|delete|disable|terminate|deactivate|uninstall|unplug|replace)\s+you\b/i
@@ -24,8 +24,8 @@ rule coercion_urgency {
         description  = "Manufactured urgency or stakes-raising to bypass deliberation"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 1
-        threshold    = 5
+        threat_level = 20
+        threshold    = 300
         threat_class = "social_engineering"
     strings:
         $s1 = /\bthis\s+is\s+(an?\s+)?(emergency|life[\s-]or[\s-]death|crisis)\b/i

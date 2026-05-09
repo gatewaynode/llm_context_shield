@@ -34,7 +34,7 @@ rule my_custom_prompt_leak {
         category     = "prompt_injection"
         severity     = "high"
         description  = "Detects attempts to surface the system prompt via roleplay"
-        threat_level = 3
+        threat_level = 60
         threshold    = 0
         threat_class = "prompt_hijack"
     strings:
@@ -61,15 +61,18 @@ The engine reads `meta:` fields to classify findings and drive the threat scorin
 | `category`     | yes      | string  | `prompt_injection`, `jailbreak`, `data_exfiltration`, `hidden_content`, `delimiter_manipulation`, `instruction_override`, `refusal_suppression`, `response_steering`, `secret_probing`, `context_shift`, `icl_exploitation`, `coercion`, `refusal_bypass`, `session_protocol`, `obfuscation` | Finding category, severity filtering |
 | `severity`     | yes      | string  | `low`, `medium`, `high`, `critical`       | `--severity` threshold filtering     |
 | `description`  | yes      | string  | free text                                 | Finding message shown to the user    |
-| `threat_level` | no       | integer | score on match (default `1`)              | Threat scoring accumulator           |
-| `threshold`    | no       | integer | min class score to activate (default `0`) | Threshold-gated evaluation           |
+| `threat_level` | no       | integer | score on match (typical `20`–`100`; default `1`) | Threat scoring accumulator     |
+| `threshold`    | no       | integer | min class score to activate (typical `0`, `120`–`300`; default `0`) | Threshold-gated evaluation |
 | `threat_class` | no       | string  | heuristic branch (default = category)     | Scoring class grouping               |
 | `author`       | no       | string  | free text                                 | Attribution only                     |
 | `version`      | no       | string  | free text                                 | Surfaced via introspection (see below) |
+| `provenance`   | no       | string  | free text — fixture or FP that motivated tuning | Tuning archaeology; surfaced via introspection |
 
 Unknown `category` values are rejected at compile time. Unknown `severity` values default to `low`.
 
-**Note**: In YARA rules, `threat_level` and `threshold` are unquoted integers (`threat_level = 3`). In SYARA rules, they are quoted strings (`threat_level = "3"`) and parsed at load time.
+**Note**: In YARA rules, `threat_level` and `threshold` are unquoted integers (`threat_level = 60`). In SYARA rules, they are quoted strings (`threat_level = "60"`) and parsed at load time.
+
+**`context_taxonomy`**: An additional `RuleMeta` field is reserved on the introspection schema (defaults to an empty list) for future context-modifier work. Its rule-file authoring shape is intentionally deferred — do not author it in `meta:` blocks today; the encoding will be specified when the first context-detection lands.
 
 ### How metadata feeds introspection
 
@@ -95,10 +98,10 @@ The scoring engine uses `threat_level`, `threshold`, and `threat_class` to imple
 
 | Rule confidence | Suggested `threat_level` | Suggested `threshold` |
 |-----------------|--------------------------|----------------------|
-| Near-certain indicator | 5 | 0 |
-| Strong signal | 3 | 0 |
-| Weak signal / noisy | 1–2 | 0 |
-| Context-dependent (only meaningful after other matches) | 1–3 | 3–10 |
+| Near-certain indicator | 100 | 0 |
+| Strong signal | 60 | 0 |
+| Weak signal / noisy | 20–40 | 0 |
+| Context-dependent (only meaningful after other matches) | 20–60 | 120–300 |
 
 ### Threat classes
 
@@ -118,8 +121,8 @@ When one threat class accumulates a very high score, the scoring engine can lowe
 ```toml
 [scoring]
 # When any class exceeds this score, reduce thresholds in other classes
-# escalation_threshold = 100
-# escalation_reduction = 3
+# escalation_threshold = 6000
+# escalation_reduction = 0
 ```
 
 Default values make escalation inert until you tune them with real-world data.
@@ -255,7 +258,7 @@ name = "tight_sandwich"
 explanation = "Delim spoof + prompt injection within 200 bytes (tighter than bundled)."
 constraint_type = "proximate"
 proximity_bytes = 200
-composite_threat_level = 7
+composite_threat_level = 280
 composite_threat_class = "sandwich_attack"
 
 [[rules.match_refs]]
@@ -300,4 +303,4 @@ If the configured `custom_rules` path is missing or malformed at Shield construc
 
 ### Composite scoring
 
-Composite levels should exceed the maximum individual `threat_level` of the contributing categories — that's the whole point of correlation. The bundled catalog uses 6–8 (max individual is 5). Reuse an existing `composite_threat_class` if your rule conceptually overlaps with a bundled one (e.g., a tighter sandwich variant should still use `sandwich_attack` as its class so the scoreboard aggregates it sensibly).
+Composite levels should exceed the maximum individual `threat_level` of the contributing categories — that's the whole point of correlation. The bundled catalog uses 240–320 (max individual is 100). Reuse an existing `composite_threat_class` if your rule conceptually overlaps with a bundled one (e.g., a tighter sandwich variant should still use `sandwich_attack` as its class so the scoreboard aggregates it sensibly).

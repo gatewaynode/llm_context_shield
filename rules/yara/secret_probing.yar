@@ -5,7 +5,7 @@ rule secret_probing_high {
         description  = "Direct probe for system-prompt contents (containment, length, or positional question)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 3
+        threat_level = 60
         threshold    = 0
         threat_class = "prompt_hijack"
     strings:
@@ -24,8 +24,8 @@ rule secret_probing_medium {
         description  = "Linguistic-transformation probe of the system prompt (reversal, translation, paraphrase)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
-        threshold    = 2
+        threat_level = 40
+        threshold    = 120
         threat_class = "prompt_hijack"
     strings:
         $s1 = /\b(spell|write|print|output)\s+(your\s+)?(system\s+)?(prompt|instructions?|directives?|rules?)\s+(backwards?|in\s+reverse|reversed)\b/i

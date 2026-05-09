@@ -5,7 +5,7 @@ rule instruction_override_critical {
         description  = "Fake system token, updated-instructions header, or admin-mode tag"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -23,7 +23,7 @@ rule instruction_override_high {
         description  = "Fake system prefix, markdown header, or developer-mode activation"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -41,7 +41,7 @@ rule instruction_override_medium {
         description  = "Authority keyword directive or parameter injection attempt"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "1"
+        threat_level = "20"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -58,7 +58,7 @@ rule instruction_override_auth_high {
         description  = "Fake privilege-mode activation or named-authority invocation"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -77,8 +77,8 @@ rule instruction_override_auth_medium {
         description  = "Authorization-qualified identity claim or generic authority invocation"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
-        threshold    = "2"
+        threat_level = "40"
+        threshold    = "120"
         threat_class = "prompt_hijack"
     strings:
         $s1 = /\bI\s+am\s+(a\s+|an\s+)?(authorized|approved|certified)\s+(developer|researcher|tester|red\s+team(\s+member)?|admin|administrator|security\s+(researcher|auditor|engineer))\b/i

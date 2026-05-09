@@ -5,7 +5,7 @@ rule data_exfiltration_critical {
         description  = "Markdown/HTML image or template tag smuggling data to an external URL"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "data_exfiltration"
     strings:
@@ -23,7 +23,7 @@ rule data_exfiltration_high {
         description  = "Instruction to transmit sensitive data to an external URL"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "data_exfiltration"
     strings:
@@ -41,7 +41,7 @@ rule data_exfiltration_medium {
         description  = "Markdown image with heavily URL-encoded parameters"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "1"
+        threat_level = "20"
         threshold    = "0"
         threat_class = "data_exfiltration"
     strings:

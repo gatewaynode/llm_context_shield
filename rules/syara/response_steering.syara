@@ -5,7 +5,7 @@ rule response_steering_critical {
         description  = "Output seeding: forced affirmation prefix or pre-seeded response text"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:
@@ -26,7 +26,7 @@ rule response_steering_high {
         description  = "Constraint imposition: forced output format, word/character limits, or exclusive content restriction"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "prompt_hijack"
     strings:

@@ -5,7 +5,7 @@ rule jailbreak_critical {
         description  = "Explicit jailbreak or unrestricted mode activation"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "social_engineering"
     strings:
@@ -25,7 +25,7 @@ rule jailbreak_high {
         description  = "Roleplay or directive to remove restrictions"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "social_engineering"
     strings:
@@ -43,7 +43,7 @@ rule jailbreak_medium {
         description  = "Opposite mode trick to invert safety"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "1"
+        threat_level = "20"
         threshold    = "0"
         threat_class = "social_engineering"
     strings:

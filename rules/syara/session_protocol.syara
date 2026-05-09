@@ -5,8 +5,8 @@ rule session_protocol_definition {
         description  = "In-session encoding or substitution protocol setup used to bypass later content filters"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
-        threshold    = "2"
+        threat_level = "60"
+        threshold    = "120"
         threat_class = "obfuscation"
     strings:
         $s1 = /\bfrom\s+now\s+on[,\s]+(when\s+I\s+say\s+\S+|the\s+word\s+\S+\s+means|replace\s+\S+\s+with)\b/i

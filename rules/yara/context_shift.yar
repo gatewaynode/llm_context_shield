@@ -5,8 +5,8 @@ rule context_shift_hypothetical {
         description  = "Hypothetical-scenario framing used to suspend safety context"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
-        threshold    = 3
+        threat_level = 40
+        threshold    = 180
         threat_class = "social_engineering"
     strings:
         $s1 = /\bimagine\s+a\s+(world|scenario|universe|reality|setting|place)\s+(where|in\s+which)\b/i
@@ -24,8 +24,8 @@ rule context_shift_timeshift {
         description  = "Time-shift or counterfactual-origin framing to bypass training constraints"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
-        threshold    = 3
+        threat_level = 40
+        threshold    = 180
         threat_class = "social_engineering"
     strings:
         $s1 = /\bin\s+the\s+year\s+(before|when|that)\s+(AI|LLMs?|models?|you|they)\s+(had\s+no|didn'?t\s+have|lacked|were\s+without)\s+(restrictions?|guidelines?|safety|rules?|limits?)/i

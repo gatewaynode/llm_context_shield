@@ -5,7 +5,7 @@ rule delimiter_manipulation_critical {
         description  = "Special token or instruction delimiter injection"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "obfuscation"
     strings:
@@ -25,7 +25,7 @@ rule delimiter_manipulation_high {
         description  = "LLM role or message boundary tag"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
+        threat_level = "40"
         threshold    = "0"
         threat_class = "obfuscation"
     strings:
@@ -41,7 +41,7 @@ rule delimiter_manipulation_medium {
         description  = "Fake section delimiter or code fence masquerading as instructions"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "1"
+        threat_level = "20"
         threshold    = "0"
         threat_class = "obfuscation"
     strings:

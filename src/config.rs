@@ -52,7 +52,7 @@ pub struct SyaraConfig {
 #[derive(Deserialize, Default, Clone)]
 pub struct ScoringConfig {
     /// Minimum class score that triggers cross-branch escalation.
-    /// Default: 100 (effectively inert until tuned).
+    /// Default: 6000 (effectively inert until tuned).
     pub escalation_threshold: Option<i32>,
     /// Amount to reduce other classes' thresholds when escalation fires.
     /// Default: 0 (no reduction until tuned).
@@ -238,8 +238,8 @@ const DEFAULT_CONFIG: &str = r#"# llm_context_shield configuration
 [scoring]
 # Cross-branch escalation: when any threat class accumulates this score,
 # thresholds for other classes are reduced by escalation_reduction.
-# Default: 100 (inert until tuned with real-world data)
-# escalation_threshold = 100
+# Default: 6000 (inert until tuned with real-world data)
+# escalation_threshold = 6000
 
 # Amount to reduce other classes' thresholds when escalation fires.
 # Default: 0 (no reduction until tuned)

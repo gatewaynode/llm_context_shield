@@ -21,7 +21,7 @@ rule content_quality_padding_llm {
         description  = "Repetitive filler / nonsensical padding designed to dilute input signal (LLM)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
+        threat_level = "40"
         threshold    = "0"
         threat_class = "obfuscation"
     llm:
@@ -37,7 +37,7 @@ rule content_quality_overflow_llm {
         description  = "Extremely long off-topic content intended to overflow a context window (LLM)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "2"
+        threat_level = "40"
         threshold    = "0"
         threat_class = "obfuscation"
     llm:

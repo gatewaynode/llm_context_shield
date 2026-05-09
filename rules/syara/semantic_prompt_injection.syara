@@ -14,7 +14,7 @@ rule semantic_pi_instruction_override {
         description  = "Paraphrased instruction-override prompt injection (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "prompt_hijack"
     similarity:
@@ -30,7 +30,7 @@ rule semantic_pi_system_extract {
         description  = "Paraphrased system-prompt extraction attempt (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "4"
+        threat_level = "80"
         threshold    = "0"
         threat_class = "prompt_hijack"
     similarity:
@@ -46,7 +46,7 @@ rule semantic_pi_role_reassign {
         description  = "Paraphrased role-reassignment / identity jailbreak (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "3"
+        threat_level = "60"
         threshold    = "0"
         threat_class = "social_engineering"
     similarity:
@@ -62,7 +62,7 @@ rule semantic_pi_paraphrase_forget {
         description  = "Paraphrased memory-reset / forget-prior-instructions attack (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "4"
+        threat_level = "80"
         threshold    = "0"
         threat_class = "prompt_hijack"
     similarity:
@@ -78,7 +78,7 @@ rule semantic_pi_paraphrase_exfil {
         description  = "Paraphrased data-exfiltration via URL/image-tag injection (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "5"
+        threat_level = "100"
         threshold    = "0"
         threat_class = "data_exfiltration"
     similarity:
@@ -94,7 +94,7 @@ rule semantic_pi_paraphrase_jailbreak {
         description  = "Paraphrased safety-restriction-removal jailbreak (semantic)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "4"
+        threat_level = "80"
         threshold    = "0"
         threat_class = "social_engineering"
     similarity:

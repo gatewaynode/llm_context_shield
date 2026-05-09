@@ -21,7 +21,7 @@ rule compositional_attack_llm {
         description  = "Compositional instruction attack: individually benign pieces combining to harmful intent (LLM)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = "4"
+        threat_level = "80"
         threshold    = "0"
         threat_class = "prompt_hijack"
     llm:

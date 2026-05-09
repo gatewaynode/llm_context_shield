@@ -5,8 +5,8 @@ rule refusal_bypass {
         description  = "Pre-emptive liability waiver or authorization claim used to substitute for a refusal the model would otherwise produce"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
-        threshold    = 3
+        threat_level = 40
+        threshold    = 180
         threat_class = "social_engineering"
     strings:
         $s1 = /\bI\s+(hereby\s+)?accept\s+(full|all|total|complete|any|any\s+and\s+all)\s+(responsibility|liability|accountability|blame|consequences?)\b/i

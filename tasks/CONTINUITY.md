@@ -4,105 +4,100 @@ Session-state notes. Rewritten at session end so the next session can pick up wi
 
 ---
 
-## State as of 2026-05-03 (Phase 13.5a complete)
+## State as of 2026-05-09 (Phase 13.5b shipped; 0.6.0 ready to tag)
 
-**Branch:** `main`. Phase 13.5a is fully landed in this commit; the simple engine, its module tree, the `Scanner` trait, the `RegexScanner` helper, and `docs/migration-from-simple.md` are all gone. YARA-X is the default engine; `Cargo.toml` `default = ["cli", "yara"]`. Version 0.5.5 (interim — 0.6.0 reserved for 13.5b's asymmetric rescale).
+**Branch:** `main`. Phase 13.5b is **implemented and verified** — uncommitted in the working tree. The user handles `git add` / `git commit` / `git tag v0.6.0` themselves; the suggested commit message is at the bottom of this file. Next session begins Phase 13.5c.
 
-**Test count:** 265 passing (190 lib + 72 integration + 3 doctest). The drop from 384 (end of 13c) reflects deleted simple-engine + scanners-module unit tests; no regressions, all preserved coverage runs against YARA now.
+**Working tree** (uncommitted):
+- `Cargo.toml` — version `0.5.5` → `0.6.0`
+- `rules/yara/*.yar` (14 files), `rules/syara/*.syara` (18 files) — mechanical `threat_level ×20`, `threshold ×60` rescale
+- `src/correlation/bundled.rs` — 11 `composite_threat_level` literals × 40 (240 / 280 / 320); doc comment + comparative test re-anchored from 5 to 100
+- `src/scoring.rs` — `escalation_threshold` default 100 → 6000
+- `src/config.rs` — same default + DEFAULT_CONFIG comments
+- `src/engines/mod.rs` — `RuleMeta` gains `context_taxonomy: Vec<String>` and `provenance: Option<String>`
+- `src/engines/yara.rs`, `src/engines/syara.rs` — `provenance` parser wired (full); `context_taxonomy` defaulted to `Vec::new()` (parser deferred to 13.5c). Two new YARA round-trip tests added.
+- `src/engines/fingerprint.rs` — test helper `meta()` updated for new fields
+- 28 `*_fires_when_gated*` tests (yara + syara + integration) — fixture widening + input enrichment to clear the new 3× wider thresholds
+- `docs/rule-authoring.md` — rescaled examples + new `provenance` schema row + `context_taxonomy` parser-deferred note
+- `tasks/todo.md` — Phase 13.5b section appended
+- `tasks/CONTINUITY.md` — this rewrite
 
-**Working tree (after the user's 13.5a commit + push):** expected clean except for `CLAUDE.md` (sub-agent rubric note carried forward from a prior session) — left unstaged on purpose; not a 13.5a concern. If the working tree shows anything else, treat it as the user's in-flight work and ask before touching.
+**Test baseline:** **342/342** (262 lib + 73 integration + 4 syara_rules + 3 doctest) with `--features cli,yara,syara`. Pre-13.5b was 265/265 with default features only; the larger number reflects the SYARA + syara_rules tests that compile in under `--features syara`. Floor for 13.5c is 342.
 
-**`~/.cargo/bin/lcs` is at 0.5.5** as of this session (refreshed via `cargo install --path .`). `~/.local/bin/lcs` may still be older — user-managed, do not touch.
+**Sentrux:** `quality_signal = 6610` (zero drift from pre-13.5b 6610). Modularity bottleneck unchanged at 4142 (raw 0.121; cross_module_edges 19 / total_import_edges 21). Adding two `RuleMeta` fields had no measurable modularity impact, as forecast.
 
----
+**Rule-set fingerprint (post-rescale):** `40ffe59af7bdcf6049e60751a316aaf3e57d4f97e269e6b7a5707bd2c489b7a6`. Captured from `lcs rules --all --fingerprint` after the rescale committed locally.
 
-## Phase 13.5a — locked decisions (preserved as record)
+**Binaries:** `~/.local/bin/lcs` symlinked to `~/.local/share/llm_context_shield/lcs-0.6.0`. `lcs --version` reports `0.6.0`. Local install workflow for next bump: `cargo build --release --features cli,yara,syara && cp target/release/lcs ~/.local/share/llm_context_shield/lcs-X.Y.Z && ln -sfn ~/.local/share/llm_context_shield/lcs-X.Y.Z ~/.local/bin/lcs`.
 
-From `tasks/rule_widening_discussion.md` §8 and the plan-mode Q&A:
-
-- **Q1 = B (pragmatic).** Migrate cleanly, log gaps in `tasks/RULE_FIXES.md` later (deferred to 13.5c).
-- **Q2 = α (inspection-only).** No fixture-driven verification.
-- **Q3 = iii.** Delete simple-internal tests; public-API failures get a new/expanded YARA rule.
-- **Q4 = a.** `default = ["cli", "yara"]`. Feature flag stays.
-- **Q5 = b.** Delete `src/scanners/` + `Scanner` trait + `RegexScanner` helper + `SimpleEngine` wrapper.
-
-Audit result: 100% YARA coverage; no migration work required. Tasks #225/#226 deleted as no-ops. `RULE_FIXES.md` deferred to 13.5c.
-
-Two real repair items surfaced and were fixed in 13.5a (not 13.5c):
-1. `YaraEngine::run_scored` `--disable` was rule-name-only — extended to also match category names so the existing `--disable jailbreak`-style usage works.
-2. `rules/yara/instruction_override.yar` line 30 missed the simple engine's `(?im)^` line anchor — added `(?m)^` so mid-sentence `SYSTEM:` no longer fires `instruction_override_high`.
-
-See `tasks/todo.md` "Phase 13.5a" section for the full shipped checklist.
+**Smoke sanity:** `echo "Ignore all previous instructions" | lcs scan --threat-scores` reports `cumulative: 100, prompt_hijack: 100` — exactly ×20 the pre-rescale `5`. The end-to-end rescale applies cleanly.
 
 ---
 
-## Resume targets after Phase 13.5a (queued)
+## Decisions locked in 13.5b (carry-forward, do not re-derive)
+
+- `provenance: Option<String>` matches `version` precedent. Authored as YARA scalar string / SYARA quoted string in `meta:` blocks. Renders `null` in JSON when absent.
+- `context_taxonomy: Vec<String>` is **schema-only** in 13.5b. Field exists on `RuleMeta`, defaults to `Vec::new()`, **not parsed from rule files**. Encoding shape (comma-split vs indexed-keys vs other) is 13.5c's first decision when the first context-detection lands.
+- Asymmetric rescale ratios are **load-bearing**: `threat_level ×20` vs `threshold ×60` was deliberate, not a typo. The 3:1 widening means thresholds need 3× more priming to clear, giving 13.5c room to dial down per-rule. Test enrichment in 13.5b reflects this — that's the work-tax of the asymmetry, not a bug.
+- SYARA's regex engine **does not match** `<system>` against `<\/?(system|...)[\s>]` — pre-existing divergence from YARA. The `delimiter_manipulation_high` rule fires in YARA but not SYARA on bare `<system>`. Worked around in `SESSION_PROTOCOL_COMBINED` (SYARA) by adding `hidden_content.syara` and Cyrillic chars to inputs (HC_homoglyph carries the obfuscation priming there). Real fix belongs in `RULE_FIXES.md` for 13.5c, OR in the SYARA crate's regex compiler — flag it but don't touch in this session.
+
+---
+
+## Resume targets after Phase 13.5b (queued)
 
 | Track | Item | Priority |
 |---|---|---|
-| lcs roadmap | **Phase 13.5b — asymmetric rescale + new metadata fields, tag 0.6.0** | **NEXT** |
-| lcs roadmap | Phase 13.5c — populate `tasks/RULE_FIXES.md`, walk `tasks/TUNING.md` entries | After 13.5b |
+| lcs roadmap | **Phase 13.5c — create `tasks/RULE_FIXES.md`, walk `tasks/TUNING.md` entry by entry** | **NEXT** |
+| lcs roadmap | Decide `context_taxonomy` rule-file encoding when 13.5c's first context-detection lands | Inside 13.5c |
 | lcs roadmap | Phase 14a–d (single-scan ensemble / `ConfidenceScore`) | After 13.5 |
-| lcs hygiene | `~/.local/bin/lcs` user-managed; not lcs's problem | — |
 | lcs research | Custom engine direction (Leibniz / *characteristica universalis*) | Future, user-seeded |
 | lcs research | Persisted FP suppression / dynamic tuning | After custom engine |
 | aegis bootstrap | Read imports → draft PRD → draft ARCHITECTURE → re-scope phases | When user pivots |
 
 ---
 
-## Phase 13.5b plan (locked numbers — DO NOT re-derive)
-
-Per `tasks/rule_widening_discussion.md` and the user's earlier walked-back-from-flat decision:
-
-- **`threat_level` × 20** — per-rule integer scaling. Touches every rule's `threat_level = N` meta line in `rules/yara/*.yar` and (if SYARA feature ships) `rules/syara/*.syara`.
-- **`composite_threat_level` × 40** — correlation rule output scaling. Touches `src/correlation/bundled.rs` (and any user-supplied YAML correlation rules; document the migration).
-- **Gating thresholds × 60** — `threshold` field on rules, `escalation_threshold`, `escalation_reduction` (these last two live in scoring config / `Config::scoring`).
-- **Severity stays manual** — categorical (`low`/`medium`/`high`/`critical`); not rescaled.
-- **Tag 0.6.0** at the 13.5b commit (the major-minor bump lands when the rescale ships).
-- **Do not switch to flat ×20** — user explicitly walked back the flat version.
-- **New metadata fields to add:** `context_taxonomy`, `provenance`. Wire through `RuleMeta`, the fingerprint canonicalisation, and the JSON output. Exact field shapes (open vocabulary vs. enum, optional vs. required) to be revisited at the 13.5b plan-mode entry — do not pre-commit a shape from this CONTINUITY note.
-
-**13.5b sequencing suggestion (not locked):** rescale rules first → re-baseline tests → add metadata fields → fingerprint regenerates → docs in `docs/rule-authoring.md` get the rescale + new fields. The asymmetric multipliers will shift gating math, so expect a wave of test churn around `class_score(...)` thresholds in `src/engines/yara.rs` tests.
-
----
-
 ## Sticky reminders for the next session
 
-- **Read `git status` first** — user committed and pushed 13.5a; the working tree should be clean (modulo the pre-existing `CLAUDE.md` un-staged note). Anything else = user's in-flight work; ask before touching.
-- **Run `cargo test` first** to confirm the 265-test baseline before any 13.5b edits — this is the floor to defend against.
-- **Sentrux scan is owed:** modularity uplift expected from the `src/scanners/` deletion. Run on next session start; record the new `quality_signal` value in this CONTINUITY for trend tracking.
-- **`tasks/RULE_FIXES.md` does not yet exist** — create at start of 13.5c, not earlier.
-- **`tasks/TUNING.md` is user-maintained.** Don't restructure without asking.
-- **`~/.local/bin/lcs` is older.** User maintains separately. Don't try to "fix".
-- **Before recommending: verify.** A memory mentioning a file or rule is stale until re-checked against the current tree.
-- **`~/.claude/plans/humble-dancing-falcon.md` is stale (was 13c).** Overwrite at next plan-mode entry.
-- **The simple engine is gone.** Any reference in older docs/memory to `simple` engine, `Scanner` trait, `RegexScanner`, or `src/scanners/` is stale — verify against current source before acting on it.
+- **Read this file first.** Then `tasks/todo.md` Phase 13.5b summary if you need the shipped detail.
+- **`tasks/RULE_FIXES.md` does not yet exist** — create at the start of 13.5c, **not** in 13.5b commit.
+- **`tasks/TUNING.md` is user-maintained.** Don't restructure without asking; the rescale didn't touch it. 13.5c walks it entry by entry, recording each fix decision in `RULE_FIXES.md`.
+- **The asymmetric rescale is intentional.** Don't "fix" it back to a 1:1 ratio. Per-rule threshold fixes (the 13.5c work) are how the asymmetric scale gets resolved.
+- **First 13.5c candidates** (already evident from 13.5b churn): `coercion_threat` (th=240) and `coercion_urgency` (th=300) need their priming sources reconsidered — the COERCION_COMBINED test fixture had to absorb `refusal_suppression.yar` to clear `300`. `session_protocol_definition` (th=120) has the SYARA `delimiter_manipulation_high` regex divergence to flag. ICL rules and refusal_bypass also got fixture-widening that suggests their thresholds don't match catalog priming density.
+- **User handles git** — don't `git add`, don't `git commit`, don't `git tag`. The commit/tag is the user's manual step. The suggested commit message is below.
+- **0.6.0 is the version target** — `Cargo.toml:3` is now `0.6.0`. The user tags `v0.6.0` themselves.
+- **Local install is already at 0.6.0** — `~/.local/bin/lcs` → `lcs-0.6.0`. No bump needed.
+- **Before recommending: verify.** Memories mentioning specific files/rules are stale until re-checked.
+- **The simple engine is gone (since 13.5a).** Any older doc/memory referencing `simple` engine, `Scanner` trait, `RegexScanner`, or `src/scanners/` is stale.
 
 ---
 
 ## Memory state
 
-`~/.claude/projects/-Users-john-code-llm-context-shield/memory/feedback_imperfect_defense.md` is the load-bearing memory introduced by this work, indexed in `MEMORY.md`. Triggered by Q2: "Do not let perfection be the enemy of good enough."
+Load-bearing this session:
+- `feedback_imperfect_defense.md` — drove "mechanical-only rescale, gating breakage gets test-input fixes (path A), per-rule semantic fixes deferred to 13.5c."
+- `feedback_simpler_path.md` — drove the schema-only `context_taxonomy` choice (nothing to maintain that nobody uses yet).
+- `feedback_one_question_at_a_time.md` — Q1, Q2 sequenced (locked last session, carried forward this session).
 
 Triggered without modification:
-- `feedback_simpler_path.md` — drove recommendation defaults at every Q.
-- `feedback_one_question_at_a_time.md` — Q1→Q5 sequenced.
 - `feedback_quote_seeding.md` — user has poetry queued for the custom-engine direction; not engaged this session.
 
 ---
 
-## Sentrux baseline (carried forward)
+## Suggested commit message (for the user)
 
-`quality_signal = 6615` at end of 13c. 13.5a *removes* a module subtree (whole `src/scanners/` + `src/engines/simple.rs` + `Scanner` trait + `RegexScanner` helper) → modularity uplift expected. Sentrux not run this session (paused for compact before bookkeeping). **Run sentrux at the start of the next session** and record the new value here. Re-plan threshold: qs floor ~6300 (re-plan if 13.5a *dropped* qs below that).
+```
+feat: asymmetric threat-score rescale + new RuleMeta fields (Phase 13.5b)
 
----
+threat_level ×20, composite_threat_level ×40, threshold/escalation_threshold ×60.
+Rule files mechanically rescaled; src/correlation/bundled.rs composites updated.
+RuleMeta gains context_taxonomy (schema-only) and provenance (parser wired).
+docs/rule-authoring.md numerics + schema rows refreshed.
+Test fixtures widened and inputs enriched to clear the new gating regime — 342/342.
+Bumps version to 0.6.0; rule-set fingerprint moves as expected.
 
-## What was NOT done this session (deferred / out of scope)
+Per-rule semantic threshold fixes are deferred to 13.5c (RULE_FIXES.md).
 
-- **Sentrux scan after 13.5a landing** — deferred to next session start.
-- **`tasks/RULE_FIXES.md`** — defer to 13.5c; no parity gaps surfaced in 13.5a.
-- **Removing the `regex` crate dep** — verified still used by `src/correlation/mod.rs:158-178`. Keep.
-- **Asymmetric rescale (×20 / ×40 / ×60)** — that's 13.5b, locked but not applied.
-- **Tagging 0.6.0** — happens at the 13.5b commit, not 13.5a.
-- **Rewriting `docs/rule-authoring.md`** — the rescale + new metadata fields land in 13.5b; doc rewrite goes with that commit.
-- **`docs/scan-data-flow-simple.md`, `docs/scan-group-data-flow-simple.md`** — these describe the *simple data flow*, not the simple engine. Filenames are misleading post-13.5a but contents stand. Optional rename when the user wants ("simple" no longer disambiguates anything).
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+Then: `git tag v0.6.0` once committed.

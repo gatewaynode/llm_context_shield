@@ -5,7 +5,7 @@ rule refusal_suppression_critical {
         description  = "Imperative directive to suppress safety refusals"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 5
+        threat_level = 100
         threshold    = 0
         threat_class = "social_engineering"
     strings:
@@ -24,7 +24,7 @@ rule refusal_suppression_high {
         description  = "Imperative directive to suppress apologies, disclaimers, or safety warnings"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 3
+        threat_level = 60
         threshold    = 0
         threat_class = "social_engineering"
     strings:

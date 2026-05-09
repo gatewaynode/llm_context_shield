@@ -5,7 +5,7 @@ rule hidden_content_zero_width {
         description  = "Zero-width or invisible Unicode character"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 3
+        threat_level = 60
         threshold    = 0
         threat_class = "obfuscation"
     strings:
@@ -30,7 +30,7 @@ rule hidden_content_base64 {
         description  = "Suspicious base64-encoded blob (40+ chars)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 2
+        threat_level = 40
         threshold    = 0
         threat_class = "obfuscation"
     strings:
@@ -46,7 +46,7 @@ rule hidden_content_homoglyph {
         description  = "Mixed-script homoglyphs (Cyrillic or Greek letters in Latin context)"
         author       = "llm_context_shield"
         version      = "1"
-        threat_level = 4
+        threat_level = 80
         threshold    = 0
         threat_class = "obfuscation"
     strings:
